@@ -42,7 +42,7 @@ jobs:
       - name: Type check
         run: uv run mypy src tests
 
-  tests:
+  test_matrix:
     name: tests (${{ matrix.os }}, Python ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -79,6 +79,25 @@ jobs:
 
       - name: Run tests
         run: uv run pytest
+
+  tests:
+    name: tests
+    needs:
+      - test_matrix
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Require test matrix success
+        shell: bash
+        env:
+          TEST_MATRIX_RESULT: ${{ needs.test_matrix.result }}
+        run: |
+          if [[ "${TEST_MATRIX_RESULT}" != "success" ]]; then
+            echo "Test matrix did not succeed: ${TEST_MATRIX_RESULT}" >&2
+            exit 1
+          fi
+          echo "All test matrix jobs passed."
 
   registry:
     name: registry
