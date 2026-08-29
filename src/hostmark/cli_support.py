@@ -1,5 +1,3 @@
-"""Small CLI-only helpers shared by command modules."""
-
 from __future__ import annotations
 
 from collections.abc import Callable

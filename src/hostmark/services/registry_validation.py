@@ -1,5 +1,3 @@
-"""Strict parsing, semantic validation, serialization, and history checks."""
-
 from __future__ import annotations
 
 import ipaddress
@@ -25,8 +23,6 @@ _DNS_LABEL_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 
 @dataclass(frozen=True)
 class BaselineSummary:
-    """Human-readable counts for an accepted baseline comparison."""
-
     additions: tuple[str, ...] = ()
     renames: tuple[str, ...] = ()
     retirements: tuple[str, ...] = ()
@@ -75,8 +71,6 @@ def strict_json_loads(data: bytes) -> dict[str, Any]:
 
 
 def validate_host_id(value: object, *, field: str = "host_id") -> str:
-    """Require a canonical lower-case hyphenated UUID version 4."""
-
     if not isinstance(value, str):
         raise RegistryValidationError(f"{field} must be a canonical UUIDv4 string")
     try:
@@ -89,8 +83,6 @@ def validate_host_id(value: object, *, field: str = "host_id") -> str:
 
 
 def validate_site_code(value: object) -> str:
-    """Validate a lower-case administrative site code."""
-
     if not isinstance(value, str) or len(value) > 8 or _SITE_RE.fullmatch(value) is None:
         raise RegistryValidationError(
             f"invalid site code {value!r}; expected 2-6 lower-case letters followed by a positive site number"
@@ -117,8 +109,6 @@ def hostname_site(value: object) -> str:
 
 
 def validate_dns_suffix(value: object) -> str:
-    """Validate a lower-case, multi-label DNS suffix."""
-
     if not isinstance(value, str) or not value:
         raise RegistryValidationError("dns_suffix must be a non-empty string")
     if value != value.lower() or not value.isascii():
@@ -140,8 +130,6 @@ def validate_dns_suffix(value: object) -> str:
 
 
 def parse_timestamp(value: object, *, field: str) -> datetime:
-    """Parse a strict whole-second UTC RFC 3339 timestamp."""
-
     if not isinstance(value, str) or _TIMESTAMP_RE.fullmatch(value) is None:
         raise RegistryValidationError(f"{field} must use YYYY-MM-DDTHH:MM:SSZ")
     try:
@@ -152,8 +140,6 @@ def parse_timestamp(value: object, *, field: str) -> datetime:
 
 
 def format_timestamp(value: datetime) -> str:
-    """Serialize an aware UTC datetime with whole-second precision."""
-
     if value.tzinfo is None or value.utcoffset() != UTC.utcoffset(value):
         raise RegistryValidationError("clock must return an aware UTC datetime")
     return value.replace(microsecond=0).strftime(TIMESTAMP_FORMAT)
@@ -206,6 +192,8 @@ def validate_snapshot(registry: Registry) -> None:
         site = hostname_site(host.hostname)
         if site not in site_set:
             raise RegistryValidationError(f"hostname {host.hostname!r} uses site {site!r}, which is absent from sites")
+        if len(f"{host.hostname}.{registry.dns_suffix}") > 253:
+            raise RegistryValidationError(f"FQDN for hostname {host.hostname!r} exceeds 253 ASCII characters")
         _claim_hostname(hostname_owners, host.hostname, host.host_id)
 
         seen_previous: set[str] = set()
@@ -223,8 +211,10 @@ def validate_snapshot(registry: Registry) -> None:
             _claim_hostname(hostname_owners, previous, host.host_id)
 
         registered_at = parse_timestamp(host.registered_at, field=f"hosts[{host.host_id}].registered_at")
-        if host.notes is not None and (not isinstance(host.notes, str) or not host.notes.strip()):
-            raise RegistryValidationError(f"notes for {host.host_id} must be null or a non-empty string")
+        if host.notes is not None:
+            if not isinstance(host.notes, str) or not host.notes.strip():
+                raise RegistryValidationError(f"notes for {host.host_id} must be null or a non-empty string")
+            _validate_utf8_text(host.notes, field=f"notes for {host.host_id}")
 
         if host.status == "active":
             if host.retirement is not None:
@@ -233,8 +223,6 @@ def validate_snapshot(registry: Registry) -> None:
             if host.retirement is None:
                 raise RegistryValidationError(f"retired host {host.host_id} must contain retirement metadata")
             _validate_retirement(host, registered_at)
-        else:  # pragma: no cover - Pydantic rejects this before semantic validation.
-            raise RegistryValidationError(f"invalid status for {host.host_id}: {host.status!r}")
 
     for host in registry.hosts:
         retirement = host.retirement
@@ -265,8 +253,16 @@ def _validate_retirement(host: HostRecord, registered_at: datetime) -> None:
     retired_at = parse_timestamp(retirement.retired_at, field=f"hosts[{host.host_id}].retirement.retired_at")
     if retired_at < registered_at:
         raise RegistryValidationError(f"retired_at for {host.host_id} is earlier than registered_at")
-    if not retirement.reason.strip():
+    if not isinstance(retirement.reason, str) or not retirement.reason.strip():
         raise RegistryValidationError(f"retirement reason for {host.host_id} must be non-empty")
+    _validate_utf8_text(retirement.reason, field=f"retirement reason for {host.host_id}")
+
+
+def _validate_utf8_text(value: str, *, field: str) -> None:
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise RegistryValidationError(f"{field} must be UTF-8 encodable") from exc
 
 
 def _validate_replacement_cycles(hosts_by_id: dict[str, HostRecord]) -> None:
@@ -321,7 +317,10 @@ def canonical_bytes(registry: Registry) -> bytes:
 
     validate_snapshot(registry)
     text = json.dumps(canonical_mapping(registry), ensure_ascii=False, indent=2)
-    return (text + "\n").encode("utf-8")
+    try:
+        return (text + "\n").encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise RegistryValidationError("registry text must be UTF-8 encodable") from exc
 
 
 def validate_against_baseline(candidate: Registry, baseline: Registry) -> BaselineSummary:
@@ -419,8 +418,6 @@ def _validate_existing_active(
     new: HostRecord,
     candidate_by_id: dict[str, HostRecord],
 ) -> None:
-    if new.status not in {"active", "retired"}:  # pragma: no cover - snapshot validation rejects this.
-        raise RegistryValidationError(f"invalid lifecycle transition for {old.host_id}")
     _validate_history_transition(old, new)
     if new.status == "retired":
         _require_active_replacement(new, candidate_by_id)

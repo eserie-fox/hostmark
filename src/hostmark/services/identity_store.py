@@ -1,9 +1,8 @@
-"""Cross-platform local host identity discovery and exclusive creation."""
-
 from __future__ import annotations
 
 import os
 import shlex
+import shutil
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -27,16 +26,12 @@ ExecFunction = Callable[[str, list[str]], object]
 
 @dataclass(frozen=True)
 class IdentityPaths:
-    """The two fixed identity paths for one platform and environment."""
-
     system: Path
     user: Path
 
 
 @dataclass(frozen=True)
 class LocalIdentity:
-    """A discovered or newly generated local identity."""
-
     host_id: str
     scope: IdentityScope
     path: Path
@@ -48,14 +43,15 @@ def identity_paths(
     environ: Mapping[str, str] | None = None,
     home: Path | None = None,
 ) -> IdentityPaths:
-    """Resolve fixed system and explicit user-fallback paths without I/O."""
-
     platform_value = sys.platform if platform_name is None else platform_name
     environment = os.environ if environ is None else environ
     user_home = Path.home() if home is None else home
     if platform_value.startswith("linux"):
         configured_home = environment.get("XDG_CONFIG_HOME")
-        user_config = Path(configured_home).expanduser() if configured_home else user_home / ".config"
+        configured_path = Path(configured_home) if configured_home else None
+        user_config = (
+            configured_path if configured_path is not None and configured_path.is_absolute() else user_home / ".config"
+        )
         return IdentityPaths(
             system=Path("/etc/hostmark/host-id"),
             user=user_config / "hostmark" / "host-id",
@@ -103,6 +99,21 @@ def discover_identity(paths: IdentityPaths) -> LocalIdentity:
     return _read_identity(paths.user, "user")
 
 
+def require_identity_absent(paths: IdentityPaths) -> None:
+    """Reject either existing scope so initialization can never choose one implicitly."""
+
+    system_exists = paths.system.exists()
+    user_exists = paths.user.exists()
+    if system_exists and user_exists:
+        raise IdentityConflictError(
+            f"both identity files already exist: {paths.system} and {paths.user}; remove the unintended duplicate"
+        )
+    if system_exists:
+        raise HostmarkError(f"identity is already initialized at system scope: {paths.system}")
+    if user_exists:
+        raise HostmarkError(f"identity is already initialized at user scope: {paths.user}")
+
+
 def _read_identity(path: Path, scope: IdentityScope) -> LocalIdentity:
     try:
         data = path.read_bytes()
@@ -138,16 +149,7 @@ def initialize_identity(
     _require_supported_platform(platform_value)
     if scope not in {"system", "user"}:
         raise HostmarkError(f"invalid identity scope: {scope!r}")
-    system_exists = paths.system.exists()
-    user_exists = paths.user.exists()
-    if system_exists and user_exists:
-        raise IdentityConflictError(
-            f"both identity files already exist: {paths.system} and {paths.user}; remove the unintended duplicate"
-        )
-    if system_exists:
-        raise HostmarkError(f"identity is already initialized at system scope: {paths.system}")
-    if user_exists:
-        raise HostmarkError(f"identity is already initialized at user scope: {paths.user}")
+    require_identity_absent(paths)
 
     root_check = _running_as_root if is_root is None else is_root
     if scope == "system" and platform_value != "win32" and not platform_value.startswith("cygwin") and not root_check():
@@ -158,7 +160,7 @@ def initialize_identity(
     generated = str(uuid_factory())
     try:
         validate_host_id(generated, field="generated host ID")
-    except RegistryValidationError as exc:  # Defensive support for injected UUID factories.
+    except RegistryValidationError as exc:
         raise HostmarkError(str(exc)) from exc
     created = False
     try:
@@ -204,14 +206,6 @@ def _require_supported_platform(platform_name: str) -> None:
         raise PlatformOperationError(f"unsupported platform for local identity storage: {platform_name}")
 
 
-def sudo_reexec_argv(argv: Sequence[str], *, executable: str | None = None) -> list[str]:
-    """Reconstruct the complete invocation as an argument array, never a shell string."""
-
-    python = sys.executable if executable is None else executable
-    forwarded = list(argv[1:]) if argv else []
-    return ["sudo", python, "-m", "hostmark", *forwarded]
-
-
 def maybe_reexec_for_system_scope(
     *,
     scope: IdentityScope,
@@ -221,8 +215,10 @@ def maybe_reexec_for_system_scope(
     argv: Sequence[str] | None = None,
     executable: str | None = None,
     execvp: ExecFunction | None = None,
+    which: Callable[[str], str | None] = shutil.which,
+    invoking_user_identity_path: Path,
 ) -> bool:
-    """Re-exec a complete POSIX command through sudo when explicitly requested."""
+    """Carry the invoking-user identity path explicitly across POSIX sudo."""
 
     if scope != "system":
         if use_sudo:
@@ -238,13 +234,27 @@ def maybe_reexec_for_system_scope(
     if root_check():
         return False
     invocation = sys.argv if argv is None else argv
-    command = sudo_reexec_argv(invocation, executable=executable)
     if not use_sudo:
+        retry = [*invocation, "--sudo"]
         raise PrivilegeRequiredError(
-            "system-scope identity initialization requires root; retry with: " + shlex.join([*command, "--sudo"])
+            "system-scope identity initialization requires root; retry with: " + shlex.join(retry)
         )
+    sudo_program = which("sudo")
+    if sudo_program is None:
+        raise PrivilegeRequiredError("sudo is unavailable; run the command as root or choose --scope user explicitly")
+    python = sys.executable if executable is None else executable
+    forwarded = list(invocation[1:]) if invocation else []
+    command = [
+        "sudo",
+        python,
+        "-m",
+        "hostmark",
+        *forwarded,
+        "--_invoking-user-identity-path",
+        str(invoking_user_identity_path),
+    ]
     executor: ExecFunction = os.execvp if execvp is None else execvp
-    executor("sudo", command)
+    executor(sudo_program, command)
     return True
 
 
@@ -256,5 +266,5 @@ __all__ = [
     "identity_paths",
     "initialize_identity",
     "maybe_reexec_for_system_scope",
-    "sudo_reexec_argv",
+    "require_identity_absent",
 ]

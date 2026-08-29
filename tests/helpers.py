@@ -1,5 +1,3 @@
-"""Synthetic registry builders shared by deterministic tests."""
-
 from __future__ import annotations
 
 import json
@@ -83,16 +81,3 @@ def mapping(registry_value: Registry) -> dict[str, Any]:
 def json_bytes(value: dict[str, Any], *, indent: int | None = 2, final_newline: bool = True) -> bytes:
     text = json.dumps(value, ensure_ascii=False, indent=indent)
     return (text + ("\n" if final_newline else "")).encode("utf-8")
-
-
-__all__ = [
-    "HOST_A",
-    "HOST_B",
-    "HOST_C",
-    "active_host",
-    "canonical",
-    "json_bytes",
-    "mapping",
-    "registry",
-    "retired_host",
-]

@@ -1,5 +1,3 @@
-"""Strict version-one registry models."""
-
 from __future__ import annotations
 
 from typing import Literal
@@ -8,8 +6,6 @@ from pydantic import BaseModel, ConfigDict
 
 
 class Retirement(BaseModel):
-    """Terminal lifecycle metadata for a retired host identity."""
-
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     retired_at: str
@@ -18,8 +14,6 @@ class Retirement(BaseModel):
 
 
 class HostRecord(BaseModel):
-    """One immutable identity and its current registry state."""
-
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     host_id: str
@@ -32,8 +26,6 @@ class HostRecord(BaseModel):
 
 
 class Registry(BaseModel):
-    """Complete version-one host registry snapshot."""
-
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     schema_version: Literal[1]

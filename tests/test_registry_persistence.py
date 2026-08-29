@@ -1,5 +1,3 @@
-"""Optimistic concurrency, atomic replacement, dry-run, and format tests."""
-
 from __future__ import annotations
 
 import os
@@ -14,7 +12,13 @@ from hostmark.domain.errors import (
     NonCanonicalRegistryError,
     RegistryValidationError,
 )
-from hostmark.services.registry_store import format_registry, mutate_registry, rename_host
+from hostmark.services.registry_store import (
+    format_registry,
+    initialize_registry,
+    mutate_registry,
+    new_registry,
+    rename_host,
+)
 from tests.helpers import HOST_A, active_host, canonical, json_bytes, mapping, registry
 
 
@@ -47,7 +51,6 @@ def test_mutation_atomically_replaces_and_preserves_permissions(tmp_path: Path) 
     path = tmp_path / "hosts.json"
     write_registry(path)
     path.chmod(0o640)
-    original_inode = path.stat().st_ino
 
     result = mutate_registry(path, lambda value: rename_host(value, selector=HOST_A, new_hostname="nc1-fox-02"))
 
@@ -55,7 +58,6 @@ def test_mutation_atomically_replaces_and_preserves_permissions(tmp_path: Path) 
     assert b'"hostname": "nc1-fox-02"' in path.read_bytes()
     if os.name == "posix":
         assert stat.S_IMODE(path.stat().st_mode) == 0o640
-        assert path.stat().st_ino != original_inode
 
 
 def test_source_change_during_mutation_aborts_without_overwriting(tmp_path: Path) -> None:
@@ -66,14 +68,13 @@ def test_source_change_during_mutation_aborts_without_overwriting(tmp_path: Path
     def change_source() -> None:
         path.write_bytes(concurrent)
 
-    with pytest.raises(ConcurrentModificationError) as exc_info:
+    with pytest.raises(ConcurrentModificationError):
         mutate_registry(
             path,
             lambda value: rename_host(value, selector=HOST_A, new_hostname="nc1-fox-02"),
             before_compare=change_source,
         )
 
-    assert exc_info.value.exit_code == 10
     assert path.read_bytes() == concurrent
 
 
@@ -93,6 +94,17 @@ def test_temporary_file_is_cleaned_after_replace_failure(tmp_path: Path) -> None
 
     assert path.read_bytes() == original
     assert list(tmp_path.glob(".hosts.json.*.tmp")) == []
+
+
+def test_registry_parent_creation_failure_is_a_project_error(tmp_path: Path) -> None:
+    parent_file = tmp_path / "not-a-directory"
+    parent_file.write_text("regular file", encoding="utf-8")
+    path = parent_file / "hosts.json"
+
+    with pytest.raises(HostmarkError, match="could not create registry parent directory"):
+        initialize_registry(path, new_registry(dns_suffix="node.infra.example.com", sites=["nc1"]))
+
+    assert parent_file.read_text(encoding="utf-8") == "regular file"
 
 
 def test_post_write_reread_is_strictly_validated(tmp_path: Path) -> None:

@@ -1,5 +1,3 @@
-"""Registry path resolution, lifecycle transitions, and atomic persistence."""
-
 from __future__ import annotations
 
 import difflib
@@ -52,8 +50,6 @@ class RegistryDocument:
 
 @dataclass(frozen=True)
 class MutationResult:
-    """Result of a fully validated mutation or dry run."""
-
     original: Registry
     candidate: Registry
     changed: bool
@@ -63,15 +59,11 @@ class MutationResult:
 
 @dataclass(frozen=True)
 class FormatResult:
-    """Result of formatting or checking one registry."""
-
     changed: bool
     wrote: bool
 
 
 def utc_now() -> datetime:
-    """Return an injectable timezone-aware clock value."""
-
     return datetime.now(UTC)
 
 
@@ -133,8 +125,6 @@ def read_registry(path: Path, *, require_canonical: bool = True) -> RegistryDocu
 
 
 def new_registry(*, dns_suffix: str, sites: Sequence[str]) -> Registry:
-    """Build a validated empty version-one registry."""
-
     validate_dns_suffix(dns_suffix)
     if not sites:
         raise RegistryValidationError("at least one --site is required")
@@ -169,8 +159,6 @@ def resolve_host(registry: Registry, selector: str) -> HostRecord:
 
 
 def fqdn(registry: Registry, host: HostRecord) -> str:
-    """Compute a node FQDN without storing redundant registry state."""
-
     return f"{host.hostname}.{registry.dns_suffix}"
 
 
@@ -182,8 +170,6 @@ def register_host(
     notes: str | None,
     clock: Clock = utc_now,
 ) -> Registry:
-    """Register a new active host identity."""
-
     validate_host_id(host_id)
     site = hostname_site(hostname)
     if site not in registry.sites:
@@ -208,8 +194,6 @@ def register_host(
 
 
 def rename_host(registry: Registry, *, selector: str, new_hostname: str) -> Registry:
-    """Rename an active identity and append its current name to history."""
-
     old = resolve_host(registry, selector)
     if old.status == "retired":
         raise RetiredHostError(f"retired host {old.hostname} cannot be renamed")
@@ -238,8 +222,6 @@ def retire_host(
     replacement_selector: str | None = None,
     clock: Clock = utc_now,
 ) -> Registry:
-    """Apply the terminal active-to-retired transition."""
-
     target = resolve_host(registry, selector)
     if target.status == "retired":
         raise RetiredHostError(f"host {target.hostname} is already retired")
@@ -371,8 +353,6 @@ def format_registry(
 
 
 def validate_registry_files(candidate_path: Path, baseline_path: Path | None = None) -> BaselineSummary | None:
-    """Validate a candidate and optionally compare it with an older snapshot."""
-
     candidate = read_registry(candidate_path, require_canonical=True).registry
     if baseline_path is None:
         return None
@@ -389,7 +369,10 @@ def _atomic_write(
     require_absent: bool,
     replace: ReplaceFunction | None = None,
 ) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise HostmarkError(f"could not create registry parent directory {path.parent} for {path}: {exc}") from exc
     if require_absent:
         if path.exists():
             raise HostmarkError(f"refusing to overwrite existing registry: {path}")
@@ -410,13 +393,29 @@ def _atomic_write(
         ):
             raise ConcurrentModificationError(f"registry changed concurrently; no update was written: {path}")
 
-    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    except OSError as exc:
+        raise HostmarkError(f"could not create temporary registry file in {path.parent} for {path}: {exc}") from exc
     temporary = Path(temporary_name)
     try:
-        with os.fdopen(descriptor, "wb") as handle:
-            handle.write(data)
-            handle.flush()
-            os.fsync(handle.fileno())
+        try:
+            handle = os.fdopen(descriptor, "wb")
+        except OSError as exc:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+            raise HostmarkError(f"could not open temporary registry file {temporary} for {path}: {exc}") from exc
+        try:
+            with handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+        except OSError as exc:
+            raise HostmarkError(
+                f"could not write and sync temporary registry file {temporary} for {path}: {exc}"
+            ) from exc
         if existing_mode is not None:
             try:
                 os.chmod(temporary, existing_mode)
@@ -452,6 +451,8 @@ def _atomic_write(
 
 
 def _fsync_parent(parent: Path) -> None:
+    """Directory fsync is best-effort because it is not portable across platforms/filesystems."""
+
     if os.name != "posix":
         return
     try:
@@ -472,8 +473,6 @@ def hosts_filtered(
     status_filter: Literal["active", "retired"] | None = None,
     site_filter: str | None = None,
 ) -> list[HostRecord]:
-    """Return deterministic list output after validating optional filters."""
-
     if site_filter is not None:
         validate_site_code(site_filter)
         if site_filter not in registry.sites:

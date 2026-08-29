@@ -1,5 +1,3 @@
-"""Read-only operating-system hostname normalization and drift checking."""
-
 from __future__ import annotations
 
 import socket
@@ -19,16 +17,12 @@ from hostmark.services.registry_store import fqdn
 
 @dataclass(frozen=True)
 class ActualHostname:
-    """Raw diagnostic hostname and normalized short form."""
-
     raw: str
     short: str
 
 
 @dataclass(frozen=True)
 class CheckResult:
-    """Successful identity, lifecycle, and hostname comparison."""
-
     identity: LocalIdentity
     host: HostRecord
     actual: ActualHostname
@@ -36,8 +30,6 @@ class CheckResult:
 
 
 def normalize_actual_hostname(raw: str) -> ActualHostname:
-    """Normalize whitespace, a trailing root dot, FQDN labels, and case."""
-
     if not isinstance(raw, str):
         raise PlatformOperationError("operating-system hostname reader returned a non-string value")
     trimmed = raw.strip()
@@ -50,8 +42,6 @@ def normalize_actual_hostname(raw: str) -> ActualHostname:
 
 
 def read_actual_hostname(reader: Callable[[], str] = socket.gethostname) -> ActualHostname:
-    """Read the OS hostname through an injectable standard-library boundary."""
-
     try:
         raw = reader()
     except OSError as exc:
