@@ -93,14 +93,14 @@ def test_discovery_reports_neither_system_only_and_user_only(tmp_path: Path) -> 
         discover_identity(paths)
 
     paths.system.parent.mkdir(parents=True)
-    paths.system.write_text(f"{HOST_A}\n", encoding="ascii", newline="\n")
+    paths.system.write_bytes(f"{HOST_A}\n".encode("ascii"))
     system = discover_identity(paths)
     assert system.scope == "system"
     assert system.host_id == HOST_A
 
     paths.system.unlink()
     paths.user.parent.mkdir(parents=True)
-    paths.user.write_text(f"{HOST_A}\n", encoding="ascii", newline="\n")
+    paths.user.write_bytes(f"{HOST_A}\n".encode("ascii"))
     user = discover_identity(paths)
     assert user.scope == "user"
     assert user.path == paths.user
@@ -111,9 +111,9 @@ def test_both_identity_files_are_always_a_conflict(tmp_path: Path, same_value: b
     paths = local_paths(tmp_path)
     paths.system.parent.mkdir(parents=True)
     paths.user.parent.mkdir(parents=True)
-    paths.system.write_text(f"{HOST_A}\n", encoding="ascii")
+    paths.system.write_bytes(f"{HOST_A}\n".encode("ascii"))
     other = HOST_A if same_value else "2c179ac7-7252-46be-8dc4-0db8d83e5de1"
-    paths.user.write_text(f"{other}\n", encoding="ascii")
+    paths.user.write_bytes(f"{other}\n".encode("ascii"))
 
     with pytest.raises(IdentityConflictError, match="both system and user"):
         discover_identity(paths)
@@ -122,15 +122,16 @@ def test_both_identity_files_are_always_a_conflict(tmp_path: Path, same_value: b
 @pytest.mark.parametrize(
     "content",
     [
-        HOST_A,
-        "not-a-uuid\n",
-        "F0C5EBCE-B37E-45D5-9F62-5C5A12F25116\n",
+        HOST_A.encode("ascii"),
+        f"{HOST_A}\r\n".encode("ascii"),
+        b"not-a-uuid\n",
+        b"F0C5EBCE-B37E-45D5-9F62-5C5A12F25116\n",
     ],
 )
-def test_malformed_identity_content_is_rejected(tmp_path: Path, content: str) -> None:
+def test_malformed_identity_content_is_rejected(tmp_path: Path, content: bytes) -> None:
     paths = local_paths(tmp_path)
     paths.user.parent.mkdir(parents=True)
-    paths.user.write_bytes(content.encode())
+    paths.user.write_bytes(content)
 
     with pytest.raises(HostmarkError, match="identity file"):
         discover_identity(paths)
@@ -140,8 +141,13 @@ def test_identity_path_that_is_a_directory_is_not_treated_as_missing(tmp_path: P
     paths = local_paths(tmp_path)
     paths.user.mkdir(parents=True)
 
-    with pytest.raises(HostmarkError, match="could not read identity file"):
+    with pytest.raises(HostmarkError) as caught:
         discover_identity(paths)
+
+    message = str(caught.value)
+    assert "identity file" in message
+    assert str(paths.user) in message
+    assert "not initialized" not in message
 
 
 def test_initialization_is_exclusive_and_durable_across_scopes(tmp_path: Path) -> None:
@@ -166,7 +172,7 @@ def test_initialization_is_exclusive_and_durable_across_scopes(tmp_path: Path) -
 
     system_first = local_paths(tmp_path / "system-first")
     system_first.system.parent.mkdir(parents=True)
-    system_first.system.write_text(f"{HOST_A}\n", encoding="ascii")
+    system_first.system.write_bytes(f"{HOST_A}\n".encode("ascii"))
     with pytest.raises(HostmarkError, match="already initialized"):
         initialize_identity(scope="user", paths=system_first, platform_name="linux", is_root=lambda: False)
 
@@ -279,7 +285,7 @@ def test_missing_sudo_executable_is_a_project_error() -> None:
 def test_existing_user_identity_blocks_sudo_before_reexec(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     paths = local_paths(tmp_path)
     paths.user.parent.mkdir(parents=True)
-    paths.user.write_text(f"{HOST_A}\n", encoding="ascii")
+    paths.user.write_bytes(f"{HOST_A}\n".encode("ascii"))
     monkeypatch.setattr(identity_commands, "identity_paths", lambda: paths)
 
     def unexpected_reexec(**kwargs: object) -> bool:
@@ -302,7 +308,7 @@ def test_privileged_recheck_catches_identity_created_after_preflight(
 
     def create_racing_identity(**kwargs: object) -> bool:
         paths.user.parent.mkdir(parents=True)
-        paths.user.write_text(f"{HOST_A}\n", encoding="ascii")
+        paths.user.write_bytes(f"{HOST_A}\n".encode("ascii"))
         return False
 
     monkeypatch.setattr(identity_commands, "maybe_reexec_for_system_scope", create_racing_identity)
@@ -319,7 +325,7 @@ def test_privileged_recheck_catches_identity_created_after_preflight(
 def test_identity_show_raw_prints_only_uuid(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     paths = local_paths(tmp_path)
     paths.user.parent.mkdir(parents=True)
-    paths.user.write_text(f"{HOST_A}\n", encoding="ascii")
+    paths.user.write_bytes(f"{HOST_A}\n".encode("ascii"))
     monkeypatch.setattr(identity_commands, "identity_paths", lambda: paths)
 
     result = RUNNER.invoke(app, ["identity", "show", "--raw"])

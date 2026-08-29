@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import posixpath
 import shlex
 import shutil
 import sys
@@ -48,9 +49,8 @@ def identity_paths(
     user_home = Path.home() if home is None else home
     if platform_value.startswith("linux"):
         configured_home = environment.get("XDG_CONFIG_HOME")
-        configured_path = Path(configured_home) if configured_home else None
         user_config = (
-            configured_path if configured_path is not None and configured_path.is_absolute() else user_home / ".config"
+            Path(configured_home) if configured_home and posixpath.isabs(configured_home) else user_home / ".config"
         )
         return IdentityPaths(
             system=Path("/etc/hostmark/host-id"),

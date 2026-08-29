@@ -128,7 +128,7 @@ def test_register_uses_discovered_local_identity(tmp_path: Path, monkeypatch: py
     initialize_registry(path, new_registry(dns_suffix="node.infra.example.com", sites=["nc1"]))
     identity_file = tmp_path / "identity" / "host-id"
     identity_file.parent.mkdir(parents=True)
-    identity_file.write_text(f"{HOST_A}\n", encoding="ascii")
+    identity_file.write_bytes(f"{HOST_A}\n".encode("ascii"))
     paths = IdentityPaths(system=tmp_path / "system" / "host-id", user=identity_file)
     monkeypatch.setattr(registry_commands, "identity_paths", lambda: paths)
 
