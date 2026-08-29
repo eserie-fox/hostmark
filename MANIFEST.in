@@ -1,0 +1,8 @@
+include README.md CHANGELOG.md LICENSE pyproject.toml
+recursive-include src *.py py.typed
+recursive-include docs *.md
+prune registry
+prune tests
+prune .github
+prune scripts
+global-exclude *.py[cod] __pycache__ .DS_Store

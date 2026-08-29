@@ -1,0 +1,324 @@
+"""Typer command surface, output, path resolution, and error-boundary tests."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from typer.testing import CliRunner
+
+import hostmark.commands.check as check_commands
+import hostmark.commands.identity as identity_commands
+import hostmark.commands.registry as registry_commands
+from hostmark.cli import app
+from hostmark.domain.errors import HostmarkError
+from hostmark.domain.models import Registry
+from hostmark.services.host_state import check_host_state
+from hostmark.services.identity_store import IdentityPaths, LocalIdentity
+from hostmark.services.registry_store import initialize_registry, new_registry, resolve_registry_path
+from hostmark.version import __version__
+from tests.helpers import HOST_A, HOST_B, active_host, canonical, registry, retired_host
+
+RUNNER = CliRunner()
+
+
+def test_root_help_and_version() -> None:
+    root = RUNNER.invoke(app, [])
+    version = RUNNER.invoke(app, ["--version"])
+
+    assert root.exit_code == 0
+    assert "Usage:" in root.stdout
+    assert "identity" in root.stdout and "registry" in root.stdout and "check" in root.stdout
+    assert version.exit_code == 0
+    assert version.stdout == f"{__version__}\n"
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["identity", "--help"],
+        ["identity", "init", "--help"],
+        ["identity", "show", "--help"],
+        ["registry", "--help"],
+        ["registry", "init", "--help"],
+        ["registry", "register", "--help"],
+        ["registry", "rename", "--help"],
+        ["registry", "retire", "--help"],
+        ["registry", "list", "--help"],
+        ["registry", "show", "--help"],
+        ["registry", "format", "--help"],
+        ["registry", "validate", "--help"],
+        ["check", "--help"],
+    ],
+)
+def test_every_command_has_help(arguments: list[str]) -> None:
+    result = RUNNER.invoke(app, arguments)
+
+    assert result.exit_code == 0
+    assert "Usage:" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["registry", "init", "--dns-suffix", "node.infra.example.com"],
+        ["registry", "register"],
+        ["registry", "rename", "nc1-fox-01"],
+        ["registry", "retire", "nc1-fox-01"],
+        ["registry", "show"],
+    ],
+)
+def test_missing_required_arguments_use_cli_usage_code_two(arguments: list[str]) -> None:
+    result = RUNNER.invoke(app, arguments)
+
+    assert result.exit_code == 2
+    assert "Traceback" not in result.output
+
+
+def test_known_project_error_is_concise_on_stderr_without_traceback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = IdentityPaths(system=tmp_path / "system-id", user=tmp_path / "user-id")
+    monkeypatch.setattr(identity_commands, "identity_paths", lambda: paths)
+
+    result = RUNNER.invoke(app, ["identity", "show"])
+
+    assert result.exit_code == 3
+    assert "Error: local identity is not initialized" in result.stderr
+    assert "Traceback" not in result.output
+    assert "IdentityNotInitializedError" not in result.output
+
+
+def test_registry_init_register_list_show_and_validate_outputs(tmp_path: Path) -> None:
+    path = tmp_path / "registry" / "hosts.json"
+
+    initialized = RUNNER.invoke(
+        app,
+        [
+            "registry",
+            "init",
+            "--registry",
+            str(path),
+            "--dns-suffix",
+            "node.infra.example.com",
+            "--site",
+            "nc1",
+        ],
+    )
+    registered = RUNNER.invoke(
+        app,
+        [
+            "registry",
+            "register",
+            "nc1-orange",
+            "--registry",
+            str(path),
+            "--host-id",
+            HOST_A,
+        ],
+    )
+    listed = RUNNER.invoke(app, ["registry", "list", "--registry", str(path)])
+    shown = RUNNER.invoke(app, ["registry", "show", HOST_A, "--registry", str(path)])
+    validated = RUNNER.invoke(app, ["registry", "validate", "--registry", str(path)])
+
+    for result in (initialized, registered, listed, shown, validated):
+        assert result.exit_code == 0, result.output
+    assert f"Initialized registry: {path}" in initialized.stdout
+    assert "Registered: nc1-orange" in registered.stdout
+    assert HOST_A in registered.stdout
+    assert "nc1-orange.node.infra.example.com" in registered.stdout
+    assert "HOSTNAME\tSTATUS\tHOST ID" in listed.stdout
+    assert "nc1-orange\tactive" in listed.stdout
+    assert "Previous hostnames: -" in shown.stdout
+    assert "Registry is valid and canonical" in validated.stdout
+
+
+def test_register_uses_discovered_local_identity(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "hosts.json"
+    initialize_registry(path, new_registry(dns_suffix="node.infra.example.com", sites=["nc1"]))
+    identity_file = tmp_path / "identity" / "host-id"
+    identity_file.parent.mkdir(parents=True)
+    identity_file.write_text(f"{HOST_A}\n", encoding="ascii")
+    paths = IdentityPaths(system=tmp_path / "system" / "host-id", user=identity_file)
+    monkeypatch.setattr(registry_commands, "identity_paths", lambda: paths)
+
+    result = RUNNER.invoke(
+        app,
+        ["registry", "register", "nc1-orange", "--registry", str(path)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert f"Host ID: {HOST_A}" in result.stdout
+
+
+def test_mutation_dry_run_and_summary_outputs(tmp_path: Path) -> None:
+    path = tmp_path / "hosts.json"
+    original = canonical(registry(active_host(), active_host(HOST_B, "nc1-live-02")))
+    path.write_bytes(original)
+
+    dry = RUNNER.invoke(
+        app,
+        ["registry", "rename", HOST_A, "nc1-fox-02", "--registry", str(path), "--dry-run"],
+    )
+    assert path.read_bytes() == original
+    renamed = RUNNER.invoke(
+        app,
+        ["registry", "rename", HOST_A, "nc1-fox-02", "--registry", str(path)],
+    )
+    retired = RUNNER.invoke(
+        app,
+        [
+            "registry",
+            "retire",
+            "nc1-fox-02",
+            "--reason",
+            "Rebuilt",
+            "--replacement",
+            "nc1-live-02",
+            "--registry",
+            str(path),
+        ],
+    )
+
+    assert dry.exit_code == 0, dry.output
+    assert dry.stdout.startswith(f"--- {path}\n+++ {path}\n")
+    assert "Dry run - would rename: nc1-fox-01 -> nc1-fox-02" in dry.stdout
+    assert renamed.exit_code == 0 and "Renamed: nc1-fox-01 -> nc1-fox-02" in renamed.stdout
+    assert retired.exit_code == 0 and "Retired: nc1-fox-02" in retired.stdout
+    assert f"Replacement host ID: {HOST_B}" in retired.stdout
+
+
+def test_show_resolves_replacement_and_reverse_relationship(tmp_path: Path) -> None:
+    path = tmp_path / "hosts.json"
+    path.write_bytes(canonical(registry(retired_host(replacement_host_id=HOST_B), active_host(HOST_B, "nc1-fox-02"))))
+
+    old = RUNNER.invoke(app, ["registry", "show", HOST_A, "--registry", str(path)])
+    new = RUNNER.invoke(app, ["registry", "show", HOST_B, "--registry", str(path)])
+
+    assert old.exit_code == 0 and "Replacement hostname: nc1-fox-02" in old.stdout
+    assert new.exit_code == 0 and "Replaces retired hosts: nc1-fox-01" in new.stdout
+
+
+def test_list_filters_status_and_site(tmp_path: Path) -> None:
+    path = tmp_path / "hosts.json"
+    path.write_bytes(
+        canonical(
+            registry(
+                retired_host(),
+                active_host(HOST_B, "hk1-proxy-01"),
+                sites=["nc1", "hk1"],
+            )
+        )
+    )
+
+    active = RUNNER.invoke(app, ["registry", "list", "-r", str(path), "--status", "active"])
+    nc1 = RUNNER.invoke(app, ["registry", "list", "-r", str(path), "--site", "nc1"])
+
+    assert active.exit_code == 0
+    assert "hk1-proxy-01" in active.stdout and "nc1-fox-01" not in active.stdout
+    assert nc1.exit_code == 0
+    assert "nc1-fox-01" in nc1.stdout and "hk1-proxy-01" not in nc1.stdout
+
+
+def test_format_and_baseline_validation_cli_summaries(tmp_path: Path) -> None:
+    baseline_path = tmp_path / "baseline.json"
+    candidate_path = tmp_path / "candidate.json"
+    baseline_path.write_bytes(canonical(registry(active_host(), sites=["nc1"])))
+    candidate = registry(
+        active_host(hostname="nc1-fox-02", previous=["nc1-fox-01"], notes="changed"),
+        active_host(HOST_B, "hk1-proxy-01"),
+        sites=["hk1", "nc1"],
+        dns_suffix="node.new-example.com",
+    )
+    candidate_path.write_bytes(canonical(candidate))
+
+    checked = RUNNER.invoke(app, ["registry", "format", "-r", str(candidate_path), "--check"])
+    validated = RUNNER.invoke(
+        app,
+        ["registry", "validate", "-r", str(candidate_path), "--against", str(baseline_path)],
+    )
+
+    assert checked.exit_code == 0 and "canonical" in checked.stdout
+    assert validated.exit_code == 0, validated.output
+    assert "Additions: hk1-proxy-01" in validated.stdout
+    assert "Renames: nc1-fox-01 -> nc1-fox-02" in validated.stdout
+    assert "Notes changes: nc1-fox-02" in validated.stdout
+    assert "Site additions: hk1" in validated.stdout
+    assert "WARNING:" in validated.stdout and "every computed FQDN changes" in validated.stdout
+
+
+def test_check_cli_success_and_stable_mismatch_exit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "hosts.json"
+    path.write_bytes(canonical(registry(active_host())))
+    identity = LocalIdentity(host_id=HOST_A, scope="user", path=tmp_path / "host-id")
+    monkeypatch.setattr(check_commands, "discover_identity", lambda paths: identity)
+
+    def controlled_check(document: Registry, local_identity: LocalIdentity):
+        return check_host_state(document, local_identity, hostname_reader=lambda: "NC1-FOX-01.example.com.")
+
+    monkeypatch.setattr(check_commands, "check_host_state", controlled_check)
+    success = RUNNER.invoke(app, ["check", "--registry", str(path)])
+
+    assert success.exit_code == 0, success.output
+    assert f"Identity file: {identity.path}" in success.stdout
+    assert "Actual name: NC1-FOX-01.example.com." in success.stdout
+    assert "FQDN: nc1-fox-01.node.infra.example.com" in success.stdout
+
+    def mismatch(document: Registry, local_identity: LocalIdentity):
+        return check_host_state(document, local_identity, hostname_reader=lambda: "nc1-old-01")
+
+    monkeypatch.setattr(check_commands, "check_host_state", mismatch)
+    failure = RUNNER.invoke(app, ["check", "--registry", str(path)])
+    assert failure.exit_code == 6
+    assert "hostname drift" in failure.stderr
+    assert "Traceback" not in failure.output
+
+
+def test_explicit_environment_upward_and_init_path_resolution(tmp_path: Path) -> None:
+    explicit = resolve_registry_path(Path("chosen.json"), environ={}, cwd=tmp_path)
+    configured = resolve_registry_path(None, environ={"HOSTMARK_REGISTRY": "env.json"}, cwd=tmp_path)
+    init_default = resolve_registry_path(None, environ={}, cwd=tmp_path / "empty", for_init=True)
+    root_registry = tmp_path / "registry" / "hosts.json"
+    root_registry.parent.mkdir()
+    root_registry.write_bytes(b"placeholder")
+    nested = tmp_path / "one" / "two"
+    nested.mkdir(parents=True)
+    discovered = resolve_registry_path(None, environ={}, cwd=nested)
+
+    assert explicit == (tmp_path / "chosen.json").resolve()
+    assert configured == (tmp_path / "env.json").resolve()
+    assert discovered == root_registry.resolve()
+    assert init_default == (tmp_path / "empty" / "registry" / "hosts.json").resolve()
+
+
+def test_missing_registry_path_message_lists_all_resolution_methods(tmp_path: Path) -> None:
+    with pytest.raises(HostmarkError) as exc_info:
+        resolve_registry_path(None, environ={}, cwd=tmp_path)
+
+    message = str(exc_info.value)
+    assert "--registry" in message
+    assert "HOSTMARK_REGISTRY" in message
+    assert "registry/hosts.json" in message
+
+
+def test_registry_command_honors_environment_path(tmp_path: Path) -> None:
+    path = tmp_path / "env-hosts.json"
+    path.write_bytes(canonical(registry(active_host())))
+
+    result = RUNNER.invoke(app, ["registry", "list"], env={"HOSTMARK_REGISTRY": str(path)})
+
+    assert result.exit_code == 0
+    assert "nc1-fox-01" in result.stdout
+
+
+def test_invalid_registry_returns_code_eight_without_internal_exception_text(tmp_path: Path) -> None:
+    path = tmp_path / "invalid.json"
+    path.write_text('{"schema_version": 1}\n', encoding="utf-8")
+
+    result = RUNNER.invoke(app, ["registry", "validate", "--registry", str(path)])
+
+    assert result.exit_code == 8
+    assert "Error: invalid registry field" in result.stderr
+    assert "ValidationError" not in result.output
+    assert "Traceback" not in result.output

@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "dns_suffix": "node.infra.example.com",
+  "sites": [
+    "hk1",
+    "nc1"
+  ],
+  "hosts": [
+    {
+      "host_id": "f0c5ebce-b37e-45d5-9f62-5c5a12f25116",
+      "hostname": "nc1-fox-01",
+      "status": "retired",
+      "registered_at": "2026-08-01T09:30:00Z",
+      "previous_hostnames": [],
+      "retirement": {
+        "retired_at": "2026-08-29T10:00:00Z",
+        "reason": "Synthetic VM rebuild",
+        "replacement_host_id": "2c179ac7-7252-46be-8dc4-0db8d83e5de1"
+      },
+      "notes": null
+    },
+    {
+      "host_id": "2c179ac7-7252-46be-8dc4-0db8d83e5de1",
+      "hostname": "nc1-fox-02",
+      "status": "active",
+      "registered_at": "2026-08-29T09:50:00Z",
+      "previous_hostnames": [],
+      "retirement": null,
+      "notes": "Synthetic replacement VM"
+    },
+    {
+      "host_id": "91a3c228-f85f-4f15-a428-1a81386cf021",
+      "hostname": "nc1-proxy-01",
+      "status": "active",
+      "registered_at": "2026-08-15T12:00:00Z",
+      "previous_hostnames": [
+        "hk1-proxy-01"
+      ],
+      "retirement": null,
+      "notes": null
+    }
+  ]
+}
