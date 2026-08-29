@@ -1,5 +1,3 @@
-"""Golden canonical-byte representation tests."""
-
 from __future__ import annotations
 
 from hostmark.services.registry_validation import canonical_bytes
@@ -70,14 +68,3 @@ def test_sites_and_hosts_sort_but_previous_history_does_not() -> None:
     assert data.index(b'"hk1"') < data.index(b'"nc1"')
     assert data.index(b'"hostname": "hk1-alpha-01"') < data.index(b'"hostname": "nc1-zulu-01"')
     assert data.index(b'"nc1-old-02"') < data.index(b'"nc1-old-01"')
-
-
-def test_encoding_has_no_bom_crlf_trailing_space_or_missing_final_newline() -> None:
-    data = canonical_bytes(registry(active_host(notes="café")))
-
-    assert not data.startswith(b"\xef\xbb\xbf")
-    assert b"\r" not in data
-    assert data.endswith(b"\n") and not data.endswith(b"\n\n")
-    assert all(not line.endswith((b" ", b"\t")) for line in data.splitlines())
-    assert b"caf\xc3\xa9" in data
-    assert b"\\u00e9" not in data

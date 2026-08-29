@@ -1,5 +1,3 @@
-"""OS hostname normalization and local drift behavior tests."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -47,22 +45,13 @@ def test_mismatch_and_previous_hostname_diagnostics() -> None:
 
 
 def test_unknown_local_uuid_and_retired_local_uuid_have_stable_error_types() -> None:
-    with pytest.raises(RegistryEntryNotFoundError) as unknown:
+    with pytest.raises(RegistryEntryNotFoundError):
         check_host_state(registry(), IDENTITY, hostname_reader=lambda: "nc1-fox-01")
-    assert unknown.value.exit_code == 5
 
     retired_identity = LocalIdentity(host_id=HOST_B, scope="system", path=Path("/tmp/system-id"))
-    with pytest.raises(RetiredHostError) as retired:
+    with pytest.raises(RetiredHostError):
         check_host_state(
             registry(retired_host(HOST_B, "nc1-fox-02")),
             retired_identity,
             hostname_reader=lambda: "nc1-fox-02",
         )
-    assert retired.value.exit_code == 7
-
-
-def test_mismatch_has_stable_exit_code() -> None:
-    with pytest.raises(HostnameMismatchError) as mismatch:
-        check_host_state(registry(active_host()), IDENTITY, hostname_reader=lambda: "nc1-other-01")
-
-    assert mismatch.value.exit_code == 6

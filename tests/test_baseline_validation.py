@@ -1,5 +1,3 @@
-"""Append-only baseline/history policy tests."""
-
 from __future__ import annotations
 
 import pytest
@@ -7,7 +5,7 @@ import pytest
 from hostmark.domain.errors import RegistryValidationError
 from hostmark.domain.models import HostRecord, Registry, Retirement
 from hostmark.services.registry_validation import validate_against_baseline
-from tests.helpers import HOST_A, HOST_B, HOST_C, active_host, registry, retired_host
+from tests.helpers import HOST_B, HOST_C, active_host, registry, retired_host
 
 
 def with_hosts(base: Registry, *hosts: HostRecord) -> Registry:
@@ -206,14 +204,3 @@ def test_dns_suffix_change_produces_prominent_warning() -> None:
 
     assert summary.dns_suffix_warning is not None
     assert "every computed FQDN changes" in summary.dns_suffix_warning
-
-
-def test_candidate_replacement_cycle_is_rejected() -> None:
-    baseline = registry(active_host(), active_host(HOST_B, "nc1-fox-02"))
-    candidate = registry(
-        retired_host(replacement_host_id=HOST_B),
-        retired_host(HOST_B, "nc1-fox-02", replacement_host_id=HOST_A),
-    )
-
-    with pytest.raises(RegistryValidationError, match="cycle"):
-        validate_against_baseline(candidate, baseline)

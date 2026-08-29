@@ -1,5 +1,3 @@
-"""Pure host registration, rename, and retirement transition tests."""
-
 from __future__ import annotations
 
 from datetime import UTC, datetime

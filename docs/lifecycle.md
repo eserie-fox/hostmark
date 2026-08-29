@@ -16,6 +16,17 @@ aliases, vendor labels, service names, or arbitrary pre-adoption names.
 All current and previous names stay reserved to their original UUID forever. A multi-step edit may append several names,
 but the baseline current name must be the first new history entry.
 
+Use the registry as expected state during a rename:
+
+1. Change the registry hostname, using `--dry-run` first when useful.
+2. Commit and review the registry update.
+3. Run `hostmark check` on the machine and confirm it reports the expected mismatch.
+4. Manually change the operating-system hostname.
+5. Run `hostmark check` again and require success.
+
+Changing the operating-system hostname first reverses the source-of-truth workflow and should be avoided. Hostmark only
+reports drift; it never remediates the OS name.
+
 ## New identity replacing an ended one
 
 A rebuilt VM, clone, replacement machine, or independently reinstalled identity normally receives a new UUID and a new

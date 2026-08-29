@@ -1,5 +1,3 @@
-"""CLI callback for on-demand local hostname drift detection."""
-
 from __future__ import annotations
 
 from pathlib import Path

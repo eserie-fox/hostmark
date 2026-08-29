@@ -31,7 +31,8 @@ Every host object contains exactly these required fields, including nullable fie
 
 A hostname is at most 15 characters, lower-case ASCII letters/digits separated by single hyphens, with no dot,
 underscore, whitespace, Unicode, edge hyphen, or consecutive hyphen. It begins with a site code from `sites` followed by
-`-`. A numeric suffix is not required, so `nc1-orange` is valid.
+`-`. A numeric suffix is not required, so `nc1-orange` is valid. For every current host,
+`hostname + "." + dns_suffix` must fit the 253-character ASCII DNS maximum; historical names are not active FQDNs.
 
 Current and historical hostnames are globally unique across all records. A current name cannot also occur in its own
 history. Existing history must remain an exact prefix during baseline comparison. A rename appends the prior current name
@@ -56,7 +57,8 @@ in a later snapshot.
 Timestamps use only `YYYY-MM-DDTHH:MM:SSZ`: UTC `Z`, whole seconds, no local offset, fractional seconds, or naive form.
 
 The decoder requires UTF-8 without a BOM and rejects duplicate object keys at every nesting depth. Unknown and missing
-fields, non-standard constants such as `NaN`, invalid types, and schema versions other than 1 are errors.
+fields, non-standard constants such as `NaN`, invalid types, and schema versions other than 1 are errors. Non-null notes
+and retirement reasons must themselves be UTF-8 encodable; escaped unpaired surrogates are invalid.
 
 Canonical bytes use LF on every platform, two-space indentation, no trailing whitespace, direct UTF-8 Unicode, fixed
 field order, sorted sites, sorted hosts, preserved history order, and exactly one final newline. A semantically valid but

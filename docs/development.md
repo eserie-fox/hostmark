@@ -17,13 +17,15 @@ Make targets are:
 - `lint`: run Ruff lint rules;
 - `typecheck`: run mypy over `src` and `tests`;
 - `test`: run the deterministic pytest suite;
-- `registry-check`: validate and format-check the example and an existing real registry;
+- `registry-check`: canonically validate the example and an existing real registry once;
 - `build`: build, run Twine checks, and inspect distribution privacy/metadata;
-- `check`: aggregate all authoritative local gates; and
+- `check`: aggregate formatting, lint, typing, tests, and registry validation without building packages; and
 - `clean`: remove only project-generated caches and build outputs, never registry data.
 
-Run `git diff --check` before committing. Tests never write `/etc`, ProgramData, or `/Library`; platform paths, clock,
-UUID generation, hostname reading, and transaction timing are injected at service boundaries.
+Run both `make check` and `make build` for release validation, and run `git diff --check` before committing. Normal pytest
+runs do not build a wheel or create a nested virtual environment; the explicit build target and CI package job own those
+checks. Tests never write `/etc`, ProgramData, or `/Library`; platform paths, clock, UUID generation, hostname reading,
+and transaction timing are injected at service boundaries.
 
 ## Registry fixtures
 
@@ -31,12 +33,20 @@ Only synthetic UUIDs and reserved example domains belong in tests or `registry/h
 inventory, production runtime configuration, or credentials into fixtures. The real `registry/hosts.json` is a private
 Git source of truth and is intentionally not ignored, but is absent from this bootstrap repository.
 
-The artifact verifier opens both wheel and sdist and rejects the entire `registry/` tree, host inventory names, bytecode,
-caches, and machine-local files. The packaging test installs the wheel into a fresh temporary environment and checks both
-console and `python -m` version paths.
+The artifact verifier reads the expected version directly from `src/hostmark/version.py`, then opens both wheel and sdist
+and rejects the entire `registry/` tree, host inventory names, bytecode, caches, and machine-local files. The CI package
+job installs the wheel into a fresh environment and checks import, console, module, and root-help behavior.
+
+Expected registry filesystem failures—including parent, temporary-file, write/sync, creation, replacement, and
+concurrency re-read failures—cross the CLI boundary as concise project errors. Tests exercise representative failures
+and require temporary cleanup and preservation of an unreplaced original.
 
 ## CI registry history
 
-CI always validates and format-checks the example. If a real registry exists, it does the same. On pull requests, CI uses
-the exact base SHA: deleting an existing base registry fails; an existing candidate is compared with `git show` output in
-`$RUNNER_TEMP`; a newly introduced registry receives full snapshot validation. CI never formats or writes registry files.
+CI validates the example once. For a real registry it uses the pull-request base SHA on PRs and the event's `before` SHA
+on pushes to `main`. Deleting an existing base registry fails; when both revisions contain it, the candidate is validated
+once against the exact `git show` baseline; a newly introduced registry receives snapshot validation. An all-zero push
+base is treated as having no baseline. CI never formats or writes registry files. Branch protection remains recommended,
+but direct-main-push history enforcement does not depend on it.
+
+The compact test matrix covers Ubuntu on Python 3.11 and 3.13 plus Windows and macOS on Python 3.11.

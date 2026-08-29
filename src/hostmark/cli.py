@@ -1,5 +1,3 @@
-"""Thin root Typer application for hostmark."""
-
 from __future__ import annotations
 
 from typing import Annotated
@@ -32,8 +30,6 @@ def root(
         typer.Option("--version", help="Show the package version and exit.", is_eager=True),
     ] = False,
 ) -> None:
-    """Show help by default and expose a single-source version flag."""
-
     if version:
         typer.echo(__version__)
         raise typer.Exit()
@@ -42,12 +38,10 @@ def root(
 
 
 def main() -> None:
-    """Run the installed console application."""
-
     app(prog_name="hostmark")
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     main()
 
 

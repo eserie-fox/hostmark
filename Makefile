@@ -21,18 +21,16 @@ test:
 
 registry-check:
 	uv run hostmark registry validate --registry registry/hosts.example.json
-	uv run hostmark registry format --registry registry/hosts.example.json --check
 	@if [ -f registry/hosts.json ]; then \
 		uv run hostmark registry validate --registry registry/hosts.json; \
-		uv run hostmark registry format --registry registry/hosts.json --check; \
 	fi
 
 build:
 	uv build
 	uvx twine check dist/*
-	uv run python scripts/verify_artifacts.py dist
+	python scripts/verify_artifacts.py dist
 
-check: format-check lint typecheck test registry-check build
+check: format-check lint typecheck test registry-check
 
 clean:
 	rm -rf .coverage .mypy_cache .pytest_cache .ruff_cache build dist htmlcov *.egg-info src/*.egg-info

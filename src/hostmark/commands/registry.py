@@ -1,5 +1,3 @@
-"""CLI callbacks for Git-managed registry files."""
-
 from __future__ import annotations
 
 from enum import StrEnum
@@ -29,8 +27,6 @@ from hostmark.services.registry_store import (
 
 
 class StatusFilter(StrEnum):
-    """Allowed host list lifecycle filters."""
-
     active = "active"
     retired = "retired"
 

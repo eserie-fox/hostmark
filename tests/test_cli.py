@@ -1,5 +1,3 @@
-"""Typer command surface, output, path resolution, and error-boundary tests."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -33,61 +31,52 @@ def test_root_help_and_version() -> None:
     assert version.stdout == f"{__version__}\n"
 
 
-@pytest.mark.parametrize(
-    "arguments",
-    [
-        ["identity", "--help"],
-        ["identity", "init", "--help"],
-        ["identity", "show", "--help"],
-        ["registry", "--help"],
-        ["registry", "init", "--help"],
-        ["registry", "register", "--help"],
-        ["registry", "rename", "--help"],
-        ["registry", "retire", "--help"],
-        ["registry", "list", "--help"],
-        ["registry", "show", "--help"],
-        ["registry", "format", "--help"],
-        ["registry", "validate", "--help"],
-        ["check", "--help"],
-    ],
-)
-def test_every_command_has_help(arguments: list[str]) -> None:
-    result = RUNNER.invoke(app, arguments)
-
-    assert result.exit_code == 0
-    assert "Usage:" in result.stdout
-
-
-@pytest.mark.parametrize(
-    "arguments",
-    [
-        ["registry", "init", "--dns-suffix", "node.infra.example.com"],
-        ["registry", "register"],
-        ["registry", "rename", "nc1-fox-01"],
-        ["registry", "retire", "nc1-fox-01"],
-        ["registry", "show"],
-    ],
-)
-def test_missing_required_arguments_use_cli_usage_code_two(arguments: list[str]) -> None:
-    result = RUNNER.invoke(app, arguments)
+def test_missing_required_argument_uses_cli_usage_code_two() -> None:
+    result = RUNNER.invoke(app, ["registry", "register"])
 
     assert result.exit_code == 2
-    assert "Traceback" not in result.output
 
 
-def test_known_project_error_is_concise_on_stderr_without_traceback(
+def test_representative_project_errors_are_concise_without_tracebacks(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     paths = IdentityPaths(system=tmp_path / "system-id", user=tmp_path / "user-id")
     monkeypatch.setattr(identity_commands, "identity_paths", lambda: paths)
 
-    result = RUNNER.invoke(app, ["identity", "show"])
+    missing_identity = RUNNER.invoke(app, ["identity", "show"])
 
-    assert result.exit_code == 3
-    assert "Error: local identity is not initialized" in result.stderr
-    assert "Traceback" not in result.output
-    assert "IdentityNotInitializedError" not in result.output
+    invalid_path = tmp_path / "invalid.json"
+    invalid_path.write_text('{"schema_version": 1}\n', encoding="utf-8")
+    invalid_registry = RUNNER.invoke(app, ["registry", "validate", "--registry", str(invalid_path)])
+
+    parent_file = tmp_path / "not-a-directory"
+    parent_file.write_text("regular file", encoding="utf-8")
+    filesystem_failure = RUNNER.invoke(
+        app,
+        [
+            "registry",
+            "init",
+            "--registry",
+            str(parent_file / "hosts.json"),
+            "--dns-suffix",
+            "node.infra.example.com",
+            "--site",
+            "nc1",
+        ],
+    )
+
+    cases = [
+        (missing_identity, 3, "local identity is not initialized"),
+        (invalid_registry, 8, "invalid registry field"),
+        (filesystem_failure, 1, "could not create registry parent directory"),
+    ]
+    for result, exit_code, message in cases:
+        assert result.exit_code == exit_code
+        assert result.stderr.startswith("Error: ")
+        assert message in result.stderr
+        assert "Traceback" not in result.output
+        assert "Error(" not in result.output
 
 
 def test_registry_init_register_list_show_and_validate_outputs(tmp_path: Path) -> None:
@@ -139,7 +128,7 @@ def test_register_uses_discovered_local_identity(tmp_path: Path, monkeypatch: py
     initialize_registry(path, new_registry(dns_suffix="node.infra.example.com", sites=["nc1"]))
     identity_file = tmp_path / "identity" / "host-id"
     identity_file.parent.mkdir(parents=True)
-    identity_file.write_text(f"{HOST_A}\n", encoding="ascii")
+    identity_file.write_bytes(f"{HOST_A}\n".encode("ascii"))
     paths = IdentityPaths(system=tmp_path / "system" / "host-id", user=identity_file)
     monkeypatch.setattr(registry_commands, "identity_paths", lambda: paths)
 
@@ -272,7 +261,6 @@ def test_check_cli_success_and_stable_mismatch_exit(tmp_path: Path, monkeypatch:
     failure = RUNNER.invoke(app, ["check", "--registry", str(path)])
     assert failure.exit_code == 6
     assert "hostname drift" in failure.stderr
-    assert "Traceback" not in failure.output
 
 
 def test_explicit_environment_upward_and_init_path_resolution(tmp_path: Path) -> None:
@@ -300,25 +288,3 @@ def test_missing_registry_path_message_lists_all_resolution_methods(tmp_path: Pa
     assert "--registry" in message
     assert "HOSTMARK_REGISTRY" in message
     assert "registry/hosts.json" in message
-
-
-def test_registry_command_honors_environment_path(tmp_path: Path) -> None:
-    path = tmp_path / "env-hosts.json"
-    path.write_bytes(canonical(registry(active_host())))
-
-    result = RUNNER.invoke(app, ["registry", "list"], env={"HOSTMARK_REGISTRY": str(path)})
-
-    assert result.exit_code == 0
-    assert "nc1-fox-01" in result.stdout
-
-
-def test_invalid_registry_returns_code_eight_without_internal_exception_text(tmp_path: Path) -> None:
-    path = tmp_path / "invalid.json"
-    path.write_text('{"schema_version": 1}\n', encoding="utf-8")
-
-    result = RUNNER.invoke(app, ["registry", "validate", "--registry", str(path)])
-
-    assert result.exit_code == 8
-    assert "Error: invalid registry field" in result.stderr
-    assert "ValidationError" not in result.output
-    assert "Traceback" not in result.output

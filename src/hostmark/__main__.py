@@ -1,5 +1,3 @@
-"""Support ``python -m hostmark``."""
-
 from __future__ import annotations
 
 from hostmark.cli import main

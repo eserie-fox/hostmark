@@ -38,6 +38,8 @@ hostmark registry init \
 ```
 
 Initialize the stable local identity. System scope is recommended and normally requires elevation on Linux and macOS.
+Before sudo elevation, Hostmark checks both the system path and the invoking user's path; see
+[platform identity storage](docs/platform-identity.md) for the duplicate-prevention details.
 
 ```bash
 hostmark identity init --sudo
@@ -63,12 +65,19 @@ hostmark registry register nc1-fox-01 \
   --registry registry/hosts.json
 ```
 
-Rename the same identity after separately changing the OS hostname:
+Rename the same identity in the registry first:
 
 ```bash
 hostmark registry rename nc1-fox-01 nc1-fox-02 --dry-run
 hostmark registry rename nc1-fox-01 nc1-fox-02
+git diff -- registry/hosts.json
+hostmark check --registry registry/hosts.json  # expected mismatch
+# Manually change the operating-system hostname after review.
+hostmark check --registry registry/hosts.json  # must now succeed
 ```
+
+Commit and review the registry update before changing the operating-system hostname. The first `check` deliberately
+exposes drift; the second confirms the manual OS change. Hostmark never performs that change itself.
 
 Retire an ended identity, optionally recording its active replacement:
 
