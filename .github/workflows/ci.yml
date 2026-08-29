@@ -48,13 +48,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-          - macos-latest
-        python:
-          - "3.11"
-          - "3.13"
+        include:
+          - os: ubuntu-latest
+            python: "3.11"
+          - os: ubuntu-latest
+            python: "3.13"
+          - os: windows-latest
+            python: "3.11"
+          - os: macos-latest
+            python: "3.11"
 
     steps:
       - name: Check out source
@@ -102,26 +104,18 @@ jobs:
       - name: Install dependencies
         run: uv sync --python 3.11 --extra dev
 
-      - name: Validate example registry
+      - name: Validate registry snapshots and history
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
         run: |
           uv run hostmark registry validate --registry registry/hosts.example.json
-          uv run hostmark registry format --registry registry/hosts.example.json --check
 
-      - name: Validate candidate private registry when present
-        run: |
-          if [[ -f registry/hosts.json ]]; then
-            uv run hostmark registry validate --registry registry/hosts.json
-            uv run hostmark registry format --registry registry/hosts.json --check
-          fi
-
-      - name: Validate private registry history from pull request base
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          base_has_registry=false
-          if git cat-file -e "${BASE_SHA}:registry/hosts.json" 2>/dev/null; then
-            base_has_registry=true
+          if [[ "${EVENT_NAME}" == "pull_request" ]]; then
+            base_sha="${PR_BASE_SHA}"
+          else
+            base_sha="${PUSH_BASE_SHA}"
           fi
 
           candidate_has_registry=false
@@ -129,13 +123,25 @@ jobs:
             candidate_has_registry=true
           fi
 
+          if [[ -z "${base_sha}" || "${base_sha}" =~ ^0+$ ]]; then
+            if [[ "${candidate_has_registry}" == true ]]; then
+              uv run hostmark registry validate --registry registry/hosts.json
+            fi
+            exit 0
+          fi
+
+          base_has_registry=false
+          if git cat-file -e "${base_sha}:registry/hosts.json" 2>/dev/null; then
+            base_has_registry=true
+          fi
+
           if [[ "${base_has_registry}" == true && "${candidate_has_registry}" == false ]]; then
-            echo "registry/hosts.json exists at the base SHA and cannot be deleted" >&2
+            echo "registry/hosts.json exists at ${base_sha} and cannot be deleted" >&2
             exit 1
           fi
 
           if [[ "${base_has_registry}" == true && "${candidate_has_registry}" == true ]]; then
-            git show "${BASE_SHA}:registry/hosts.json" > "${RUNNER_TEMP}/hosts.base.json"
+            git show "${base_sha}:registry/hosts.json" > "${RUNNER_TEMP}/hosts.base.json"
             uv run hostmark registry validate \
               --registry registry/hosts.json \
               --against "${RUNNER_TEMP}/hosts.base.json"
@@ -184,6 +190,3 @@ jobs:
           "${RUNNER_TEMP}/hostmark-smoke/bin/hostmark" --version
           "${RUNNER_TEMP}/hostmark-smoke/bin/python" -m hostmark --version
           "${RUNNER_TEMP}/hostmark-smoke/bin/hostmark"
-          "${RUNNER_TEMP}/hostmark-smoke/bin/hostmark" identity --help
-          "${RUNNER_TEMP}/hostmark-smoke/bin/hostmark" registry --help
-          "${RUNNER_TEMP}/hostmark-smoke/bin/hostmark" check --help

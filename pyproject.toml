@@ -36,13 +36,9 @@ Repository = "https://github.com/eserie-fox/hostmark"
 
 [project.optional-dependencies]
 dev = [
-    "build>=1.2",
     "mypy>=1.11",
     "pytest>=8.0",
     "ruff>=0.14",
-    "setuptools>=77",
-    "twine>=5.1",
-    "wheel>=0.44",
 ]
 
 [project.scripts]
