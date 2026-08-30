@@ -8,15 +8,16 @@ registries are root `hosts.json`; direct overrides do not require a marker.
 
 ## Repository commands
 
-- `repo path [--repo PATH]` prints the absolute repository, marker, and registry paths. It performs no creation or Git
-  operation. A nonexistent selected path is informational; an existing invalid marker is an error.
+- `repo path [--repo PATH]` prints the absolute repository, attributes, marker, and registry paths. It performs no
+  creation or Git operation. A nonexistent selected path is informational; invalid existing metadata is an error.
 - `repo init --dns-suffix SUFFIX --site SITE... [--repo PATH]` accepts an absent or empty target, initializes an unborn
-  Git `main` branch, writes a zero-byte marker and canonical empty registry, and prints manual Git next steps. It does not
-  stage, commit, configure a remote, push, or create/register a local identity.
+  Git `main` branch, writes exact `.gitattributes`, a zero-byte marker, and a canonical empty registry, then prints manual
+  Git next steps. It does not stage, commit, configure a remote, push, or create/register a local identity.
 - `repo sync [--repo PATH] [--remote URL]` clones an absent or empty target when a remote is supplied. Existing marked
-  repositories must be clean of tracked changes, be the Git worktree root, have `origin`, and use an attached tracking
-  branch. A supplied remote must equal `origin`. Sync runs `git pull --ff-only`, ignores untracked files, never pushes,
-  and validates the marker plus canonical registry afterward.
+  repositories must be clean of tracked changes, be the exact Git worktree root, track `origin/*`, and have canonical
+  attributes, marker, and registry paths tracked. A supplied remote must equal `origin`. Sync ignores unrelated untracked
+  files, pulls the tracked origin branch with fast-forward-only semantics, never pushes, and validates all required files
+  afterward.
 
 Full repository defaults, authentication, safety, and migration behavior are in [repository.md](repository.md).
 
@@ -53,7 +54,7 @@ an LF-only unified diff, does not write, and succeeds when the candidate is vali
 `socket.gethostname()`, removes whitespace/trailing dot/FQDN suffix, and compares the lower-case short name. Case-only
 Windows presentation is not drift. A mismatch that equals the record's previous hostname says so explicitly. Output on
 success includes identity path, UUID, registry name, raw actual name, expected FQDN, and match status. It makes no network,
-Git, network, DNS, or mutation call. Use `hostmark repo sync && hostmark check` when an explicit pull is wanted.
+Git, DNS, or mutation call. Use `hostmark repo sync && hostmark check` when an explicit pull is wanted.
 
 ## Exit codes
 

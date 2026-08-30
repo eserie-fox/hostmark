@@ -36,22 +36,29 @@ hostmark repo init \
   --dns-suffix <real-node-suffix> \
   --site nc1
 hostmark repo path
-cd <printed-repository>
-git add HOSTMARK_REPOSITORY hosts.json
+# Change into the printed repository directory, then run:
+git add .gitattributes HOSTMARK_REPOSITORY hosts.json
 git commit -m "Initialize hostmark repository"
 git remote add origin <remote-url>
 git push -u origin main
 ```
 
-`repo init` creates an unborn `main` branch, an empty marker, and a canonical empty registry. It does not stage, commit,
-configure a remote, or push. On another machine, clone through Hostmark and then check local state:
+`repo init` creates an unborn `main` branch, canonical `.gitattributes`, an empty marker, and a canonical empty registry.
+It does not stage, commit, configure a remote, or push, and it is not sync-ready until those three files are committed.
+
+On another machine, create that machine's identity before cloning and registering it:
 
 ```bash
+hostmark identity init --sudo
 hostmark repo sync --remote <remote-url>
+hostmark registry register nc1-orange
+git add hosts.json
+git commit -m "Register nc1-orange"
+git push
 hostmark check
 ```
 
-Initialize the stable local identity. System scope is recommended and normally requires elevation on Linux and macOS.
+System scope is recommended and normally requires elevation on Linux and macOS.
 Before sudo elevation, Hostmark checks both the system path and the invoking user's path; see
 [platform identity storage](docs/platform-identity.md) for the duplicate-prevention details.
 
@@ -64,14 +71,7 @@ hostmark identity init --scope user
 Never initialize a host ID in a VM template or generic system image. Each clone must generate its own identity after it
 becomes an independent operating-system instance.
 
-Register the current machine, using its discovered local identity:
-
-```bash
-hostmark registry register nc1-orange
-hostmark check
-```
-
-An administrator can register another machine using a synthetic-style explicit ID:
+An administrator may pre-register another machine only after obtaining the UUID generated on that machine:
 
 ```bash
 hostmark registry register nc1-fox-01 \
@@ -124,8 +124,10 @@ The normal read-only daily sequence is explicit:
 hostmark repo sync && hostmark check
 ```
 
-`repo sync` rejects tracked changes, ignores untracked files, uses `git pull --ff-only`, validates `hosts.json`, and never
-pushes. `check` itself never invokes Git or performs network access. See the
+`repo sync` requires the three repository metadata/data files to be tracked, rejects tracked changes, ignores unrelated
+untracked files, pulls only the current `origin/*` upstream with fast-forward-only semantics, validates `hosts.json`,
+and never pushes. Hostmark uses GitPython as a typed interface to system Git, so the user's credential helpers and SSH
+configuration remain authoritative. `check` itself never invokes Git or performs network access. See the
 [repository workflow](docs/repository.md) for discovery defaults, authentication behavior, and v0.1 migration.
 
 ## Scope and non-goals

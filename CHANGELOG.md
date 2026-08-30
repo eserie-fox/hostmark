@@ -7,6 +7,9 @@ All notable changes to hostmark are documented here.
 - Add zero-byte `HOSTMARK_REPOSITORY` marker discovery with root-level `hosts.json` registries.
 - Add stable per-user repository defaults for Linux, macOS, and Windows.
 - Add `repo path`, local unborn-main `repo init`, and noninteractive clone/fast-forward `repo sync` commands.
+- Require tracked canonical `.gitattributes`, marker, and registry files; preserve LF registry bytes under autocrlf.
+- Require the active branch to track `origin/*` and preserve registry-validation exit code after synchronization.
+- Use GitPython 3.1.59+ as a safe object interface over system Git, with explicit repository cleanup and sanitized errors.
 - Preserve direct registry-file overrides while removing implicit `registry/hosts.json` upward discovery.
 - Validate canonical registry state after every clone or pull without committing, pushing, or remediating automatically.
 

@@ -25,8 +25,9 @@ Make targets are:
 Run both `make check` and `make build` for release validation, and run `git diff --check` before committing. Normal pytest
 runs do not build a wheel or create a nested virtual environment; the explicit build target and CI package job own those
 checks. Tests never write `/etc`, ProgramData, or `/Library`; platform paths, clock, UUID generation, hostname reading,
-transaction timing are injected at service boundaries. Repository integration tests use temporary local bare Git
-repositories only, configure author identity locally, and perform no network access.
+transaction timing are injected at service boundaries. Repository integration tests use GitPython with temporary local
+bare Git repositories only, explicit test actors, and no network access. One test supplies a temporary Git configuration
+with `core.autocrlf=true`; it never changes the user's global configuration.
 
 ## Registry fixtures
 
@@ -35,10 +36,10 @@ inventory, production runtime configuration, remotes, or credentials into fixtur
 repositories only under pytest temporary directories. The source checkout must not contain root `HOSTMARK_REPOSITORY` or
 `hosts.json`; a real inventory belongs in its separate private repository.
 
-The artifact verifier reads the expected version directly from `src/hostmark/version.py`, then opens both wheel and sdist
-and rejects the entire `registry/` tree, host inventory names, a live repository marker, bytecode, caches, and
-machine-local files. The CI package job installs the wheel into a fresh environment and checks import, console, module,
-and root-help behavior.
+The artifact verifier reads the expected version directly from `src/hostmark/version.py`, checks the GitPython runtime
+constraint, then opens both wheel and sdist and rejects the entire `registry/` tree, host inventory names, a live
+repository marker, bytecode, caches, and machine-local files. The CI package job installs the wheel into a fresh
+environment and checks import, console, module, and root-help behavior.
 
 Expected registry filesystem failures—including parent, temporary-file, write/sync, creation, replacement, and
 concurrency re-read failures—cross the CLI boundary as concise project errors. Tests exercise representative failures
@@ -54,5 +55,5 @@ but direct-main-push history enforcement does not depend on it.
 
 The compact test matrix covers Ubuntu on Python 3.11 and 3.13 plus Windows and macOS on Python 3.11.
 
-Repository path tests inject platform, environment, home, and working-directory inputs. System-Git integration tests are
-limited to local init/clone/fast-forward flows and skip only when Git is genuinely unavailable.
+Repository path tests inject platform, environment, home, and working-directory inputs. System-Git/GitPython integration
+tests are limited to local init/clone/fast-forward and linked-worktree flows and skip only when Git is unavailable.
