@@ -17,6 +17,7 @@ from hostmark.services.host_state import check_host_state
 from hostmark.services.identity_store import IdentityPaths, LocalIdentity
 from hostmark.services.registry_store import initialize_registry, new_registry, resolve_registry_path
 from hostmark.services.repository import (
+    REPOSITORY_ATTRIBUTES_BYTES,
     RepositorySyncResult,
     repository_paths,
 )
@@ -282,6 +283,7 @@ def test_direct_registry_overrides_preserve_old_layout_support(tmp_path: Path) -
 def test_registry_path_resolves_repository_env_ancestor_and_default(tmp_path: Path) -> None:
     configured = repository_paths(tmp_path / "configured")
     configured.root.mkdir()
+    configured.attributes.write_bytes(REPOSITORY_ATTRIBUTES_BYTES)
     configured.marker.write_bytes(b"")
     assert (
         resolve_registry_path(None, environ={"HOSTMARK_REPO": str(configured.root)}, cwd=tmp_path)
@@ -291,12 +293,14 @@ def test_registry_path_resolves_repository_env_ancestor_and_default(tmp_path: Pa
     marked = repository_paths(tmp_path / "marked")
     nested = marked.root / "one" / "two"
     nested.mkdir(parents=True)
+    marked.attributes.write_bytes(REPOSITORY_ATTRIBUTES_BYTES)
     marked.marker.write_bytes(b"")
     assert resolve_registry_path(None, environ={}, cwd=nested) == marked.registry
 
     home = tmp_path / "home"
     default = repository_paths(home / ".local" / "share" / "hostmark" / "repo")
     default.root.mkdir(parents=True)
+    default.attributes.write_bytes(REPOSITORY_ATTRIBUTES_BYTES)
     default.marker.write_bytes(b"")
     assert (
         resolve_registry_path(None, environ={}, cwd=tmp_path / "isolated", platform_name="linux", home=home)
@@ -343,10 +347,12 @@ def test_repo_path_and_init_cli(tmp_path: Path) -> None:
 
     assert selected.exit_code == 0, selected.output
     assert f"Repository: {paths.root}" in selected.stdout
+    assert f"Attributes: {paths.attributes}" in selected.stdout
     assert f"Marker:     {paths.marker}" in selected.stdout
     assert initialized.exit_code == 0, initialized.output
     assert "Git branch: main" in initialized.stdout
-    assert "git add HOSTMARK_REPOSITORY hosts.json" in initialized.stdout
+    assert "git add .gitattributes HOSTMARK_REPOSITORY hosts.json" in initialized.stdout
+    assert "  cd " not in initialized.stdout
 
 
 def test_repo_sync_cli_summary_and_error_boundary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

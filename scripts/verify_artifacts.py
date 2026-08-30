@@ -10,6 +10,10 @@ from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 
 EXPECTED_ENTRY_POINT = "hostmark = hostmark.cli:main"
+EXPECTED_GITPYTHON_REQUIREMENTS = {
+    "gitpython<4,>=3.1.59",
+    "gitpython>=3.1.59,<4",
+}
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -53,6 +57,7 @@ def _verify_wheel(path: Path, version: str) -> None:
         entry_points = archive.read(entry_point_names[0]).decode("utf-8")
         if f"Version: {version}\n" not in metadata:
             raise ArtifactError(f"wheel metadata version is not {version}: {path.name}")
+        _verify_gitpython_requirement(metadata, path)
         if EXPECTED_ENTRY_POINT not in entry_points:
             raise ArtifactError(f"wheel console entry point is missing or incorrect: {path.name}")
 
@@ -72,6 +77,17 @@ def _verify_sdist(path: Path, version: str) -> None:
         metadata = extracted.read().decode("utf-8")
         if f"Version: {version}\n" not in metadata:
             raise ArtifactError(f"sdist metadata version is not {version}: {path.name}")
+        _verify_gitpython_requirement(metadata, path)
+
+
+def _verify_gitpython_requirement(metadata: str, path: Path) -> None:
+    requirements = {
+        line.partition(":")[2].strip().replace(" ", "").lower()
+        for line in metadata.splitlines()
+        if line.lower().startswith("requires-dist:")
+    }
+    if requirements.isdisjoint(EXPECTED_GITPYTHON_REQUIREMENTS):
+        raise ArtifactError(f"GitPython>=3.1.59,<4 runtime requirement is missing: {path.name}")
 
 
 def _verify_member_privacy(members: Iterable[str], *, artifact: str, forbid_tests: bool) -> None:

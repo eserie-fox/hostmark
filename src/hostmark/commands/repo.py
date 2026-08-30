@@ -10,7 +10,7 @@ from hostmark.services.repository import (
     initialize_repository,
     resolve_repository_paths,
     sync_repository,
-    validate_repository_marker,
+    validate_repository_metadata,
 )
 
 app = typer.Typer(help="Discover, initialize, and fast-forward a Hostmark inventory repository.", no_args_is_help=True)
@@ -21,12 +21,13 @@ app = typer.Typer(help="Discover, initialize, and fast-forward a Hostmark invent
 def path_command(
     repo: Annotated[Path | None, typer.Option("--repo", help="Repository root path.")] = None,
 ) -> None:
-    """Show the selected repository, marker, and registry paths."""
+    """Show the selected repository metadata and registry paths."""
 
     paths = resolve_repository_paths(repo)
     if paths.root.exists():
-        validate_repository_marker(paths)
+        validate_repository_metadata(paths)
     typer.echo(f"Repository: {paths.root}")
+    typer.echo(f"Attributes: {paths.attributes}")
     typer.echo(f"Marker:     {paths.marker}")
     typer.echo(f"Registry:   {paths.registry}")
 
@@ -46,12 +47,14 @@ def init_command(
         sites=site,
     )
     typer.echo(f"Initialized repository: {result.paths.root}")
+    typer.echo(f"Attributes: {result.paths.attributes}")
     typer.echo(f"Marker: {result.paths.marker}")
     typer.echo(f"Registry: {result.paths.registry}")
     typer.echo(f"Git branch: {result.branch}")
-    typer.echo("Next steps:")
-    typer.echo(f"  cd {result.paths.root}")
-    typer.echo("  git add HOSTMARK_REPOSITORY hosts.json")
+    typer.echo("Repository directory:")
+    typer.echo(f"  {result.paths.root}")
+    typer.echo("After changing into that directory, run:")
+    typer.echo("  git add .gitattributes HOSTMARK_REPOSITORY hosts.json")
     typer.echo('  git commit -m "Initialize hostmark repository"')
     typer.echo("  git remote add origin <remote-url>")
     typer.echo("  git push -u origin main")
