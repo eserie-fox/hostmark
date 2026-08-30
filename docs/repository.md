@@ -16,13 +16,15 @@ A Hostmark inventory repository may have any directory name. Its root is identif
 version. `.gitattributes` is a readable regular file with these exact LF bytes:
 
 ```gitattributes
+/.gitattributes text eol=lf
 /HOSTMARK_REPOSITORY -text
 /hosts.json text eol=lf
 ```
 
-The attributes keep the marker byte-stable and force canonical LF registry checkouts even when Git is configured with
-`core.autocrlf=true`. `hosts.json` is the existing schema-version-one canonical registry. All three root files must be
-tracked. The Hostmark source checkout intentionally has none of them at its root and is not an inventory repository.
+The first rule keeps `.gitattributes` itself LF so its exact bytes remain stable. The remaining rules keep the marker
+byte-stable and force canonical LF registry checkouts even when Git is configured with `core.autocrlf=true`.
+`hosts.json` is the existing schema-version-one canonical registry. All three root files must be tracked. The Hostmark
+source checkout intentionally has none of them at its root and is not an inventory repository.
 
 ## Defaults and discovery
 
@@ -52,7 +54,11 @@ hostmark repo init \
   --dns-suffix node.infra.example.com \
   --site nc1
 hostmark repo path
-# Change into the printed repository directory, then run:
+```
+
+Change into the Repository directory printed by `hostmark repo path`, then run:
+
+```bash
 git add .gitattributes HOSTMARK_REPOSITORY hosts.json
 git commit -m "Initialize hostmark repository"
 git remote add origin <remote-url>
@@ -66,20 +72,49 @@ not sync-ready until the three files are staged and committed and an `origin` up
 
 ## Clone and synchronize
 
+On a new machine:
+
+1. Install Hostmark 0.2.0 from FoxPI as described in the [README](../README.md).
+2. Generate and record the machine's UUID. On Windows, use an elevated terminal and omit `--sudo`.
+
 ```bash
 hostmark identity init --sudo
-hostmark repo sync --remote <remote-url>
-hostmark registry register <hostname>
-git add hosts.json
-git commit -m "Register host"
-git push
-hostmark check
-
-# Later:
-hostmark repo sync && hostmark check
+hostmark identity show --raw
 ```
 
-An administrator may pre-register a new machine only with the UUID created by `identity init` on that machine.
+3. Clone the inventory and display its location.
+
+```bash
+hostmark repo sync --remote <remote-url>
+hostmark repo path
+```
+
+4. Change into the Repository directory printed by `hostmark repo path`.
+5. Register, inspect, validate, commit, and push the machine.
+
+```bash
+hostmark registry register nc1-example-01
+git diff -- hosts.json
+hostmark registry validate --registry hosts.json
+git add hosts.json
+git commit -m "Register nc1-example-01"
+git push
+hostmark check
+```
+
+6. If the existing OS hostname differs, the first check is expected to report a mismatch. Manually change the OS
+   hostname to the canonical registry name, reboot or re-login when required, and run `hostmark check` again until it
+   succeeds. Hostmark detects drift but never modifies the OS hostname.
+
+An administrator may pre-register a machine only after that machine generates its UUID. The administrator passes that
+exact value to `registry register --host-id`; an administrator-generated substitute UUID must not be used. The target
+then synchronizes and follows the same hostname remediation and check sequence.
+
+For an already registered and correctly named machine, daily synchronization remains explicit:
+
+```bash
+hostmark repo sync && hostmark check
+```
 
 An absent or empty target requires `--remote` and is cloned. An existing repository must have exact canonical
 attributes and marker bytes, be the exact Git worktree root, track an `origin/*` branch, contain all three required files

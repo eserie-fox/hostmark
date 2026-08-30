@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from git.remote import Remote
 
 REPOSITORY_ATTRIBUTES_NAME = ".gitattributes"
-REPOSITORY_ATTRIBUTES_BYTES = b"/HOSTMARK_REPOSITORY -text\n/hosts.json text eol=lf\n"
+REPOSITORY_ATTRIBUTES_BYTES = b"/.gitattributes text eol=lf\n/HOSTMARK_REPOSITORY -text\n/hosts.json text eol=lf\n"
 REPOSITORY_MARKER_NAME = "HOSTMARK_REPOSITORY"
 REPOSITORY_REGISTRY_NAME = "hosts.json"
 REPOSITORY_ENV = "HOSTMARK_REPO"
@@ -447,6 +447,8 @@ def _translate_git_failures(action: str) -> Iterator[None]:
         GitCommandNotFound,
         InvalidGitRepositoryError,
         NoSuchPathError,
+        UnsafeOptionError,
+        UnsafeProtocolError,
     )
 
     try:
@@ -455,6 +457,10 @@ def _translate_git_failures(action: str) -> Iterator[None]:
         raise HostmarkError("git is not available in PATH") from exc
     except GitCommandError as exc:
         raise HostmarkError(f"could not {action}: {_git_command_message(exc)}") from exc
+    except UnsafeProtocolError as exc:
+        raise HostmarkError("Unsafe Git protocol is not allowed.") from exc
+    except UnsafeOptionError as exc:
+        raise HostmarkError("Unsafe Git option is not allowed.") from exc
     except (InvalidGitRepositoryError, NoSuchPathError) as exc:
         raise HostmarkError(f"could not {action}: invalid Git repository or path") from exc
     except OSError as exc:

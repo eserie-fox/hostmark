@@ -9,11 +9,13 @@ Create the real private source of truth in a separate marked repository:
 hostmark repo init \
   --dns-suffix <real-node-suffix> \
   --site nc1
+hostmark repo path
 ```
 
-That repository contains root `.gitattributes`, `HOSTMARK_REPOSITORY`, and `hosts.json`. Review and commit all three
-manually; Hostmark does not stage, commit, configure a remote, or push. The source distribution excludes this entire
-example directory, and artifact checks also reject live marker or inventory data. See
+Change into the Repository directory printed by `hostmark repo path` before reviewing and committing root
+`.gitattributes`, `HOSTMARK_REPOSITORY`, and `hosts.json`. Hostmark does not stage, commit, configure a remote, or push.
+The source distribution excludes this entire example directory, and artifact checks also reject live marker or
+inventory data. See
 [the repository guide](../docs/repository.md), including the manual v0.1 `registry/hosts.json` migration, inventory CI
 guidance, and continued direct-path override support.
 

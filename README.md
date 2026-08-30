@@ -33,10 +33,14 @@ Create the first private inventory repository at the platform-specific user defa
 
 ```bash
 hostmark repo init \
-  --dns-suffix <real-node-suffix> \
+  --dns-suffix node.infra.example.com \
   --site nc1
 hostmark repo path
-# Change into the printed repository directory, then run:
+```
+
+Change into the Repository directory printed by `hostmark repo path`, then run:
+
+```bash
 git add .gitattributes HOSTMARK_REPOSITORY hosts.json
 git commit -m "Initialize hostmark repository"
 git remote add origin <remote-url>
@@ -46,24 +50,38 @@ git push -u origin main
 `repo init` creates an unborn `main` branch, canonical `.gitattributes`, an empty marker, and a canonical empty registry.
 It does not stage, commit, configure a remote, or push, and it is not sync-ready until those three files are committed.
 
-On another machine, create that machine's identity before cloning and registering it:
+On another machine, install Hostmark 0.2.0, create that machine's identity, and record its UUID before cloning. On
+Windows, run `identity init` without `--sudo` from an elevated terminal.
 
 ```bash
 hostmark identity init --sudo
+hostmark identity show --raw
 hostmark repo sync --remote <remote-url>
-hostmark registry register nc1-orange
+hostmark repo path
+```
+
+Change into the Repository directory printed by `hostmark repo path`, then register, review, and publish the record:
+
+```bash
+hostmark registry register nc1-example-01
+git diff -- hosts.json
+hostmark registry validate --registry hosts.json
 git add hosts.json
-git commit -m "Register nc1-orange"
+git commit -m "Register nc1-example-01"
 git push
 hostmark check
 ```
+
+If the machine's current OS hostname differs from the registered name, this first check is expected to report drift.
+Manually change the OS hostname to the canonical registry hostname, reboot or re-login when the operating system
+requires it, and run `hostmark check` again until it succeeds. Hostmark detects this mismatch; it never changes the OS
+hostname.
 
 System scope is recommended and normally requires elevation on Linux and macOS.
 Before sudo elevation, Hostmark checks both the system path and the invoking user's path; see
 [platform identity storage](docs/platform-identity.md) for the duplicate-prevention details.
 
 ```bash
-hostmark identity init --sudo
 # Explicit fallback when system scope is unsuitable:
 hostmark identity init --scope user
 ```
@@ -71,12 +89,16 @@ hostmark identity init --scope user
 Never initialize a host ID in a VM template or generic system image. Each clone must generate its own identity after it
 becomes an independent operating-system instance.
 
-An administrator may pre-register another machine only after obtaining the UUID generated on that machine:
+An administrator may pre-register another machine only after obtaining the UUID generated on that machine. The
+administrator must use that exact value with `--host-id`, never invent a replacement UUID for the target machine:
 
 ```bash
 hostmark registry register nc1-fox-01 \
   --host-id f0c5ebce-b37e-45d5-9f62-5c5a12f25116
 ```
+
+The target then synchronizes the repository and follows the same hostname mismatch, manual remediation, and final
+`hostmark check` flow.
 
 Rename the same identity in the registry first:
 

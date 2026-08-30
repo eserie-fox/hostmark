@@ -12,14 +12,16 @@ registries are root `hosts.json`; direct overrides do not require a marker.
   creation or Git operation. A nonexistent selected path is informational; invalid existing metadata is an error.
 - `repo init --dns-suffix SUFFIX --site SITE... [--repo PATH]` accepts an absent or empty target, initializes an unborn
   Git `main` branch, writes exact `.gitattributes`, a zero-byte marker, and a canonical empty registry, then prints manual
-  Git next steps. It does not stage, commit, configure a remote, push, or create/register a local identity.
+  Git next steps. Run `repo path` and change into its printed Repository directory before those Git commands. Init does
+  not stage, commit, configure a remote, push, or create/register a local identity.
 - `repo sync [--repo PATH] [--remote URL]` clones an absent or empty target when a remote is supplied. Existing marked
   repositories must be clean of tracked changes, be the exact Git worktree root, track `origin/*`, and have canonical
   attributes, marker, and registry paths tracked. A supplied remote must equal `origin`. Sync ignores unrelated untracked
   files, pulls the tracked origin branch with fast-forward-only semantics, never pushes, and validates all required files
   afterward.
 
-Full repository defaults, authentication, safety, and migration behavior are in [repository.md](repository.md).
+Full first-use, registration, hostname-remediation, repository safety, and migration behavior is in
+[repository.md](repository.md).
 
 ## Identity commands
 

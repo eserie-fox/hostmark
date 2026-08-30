@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import os
 import shutil
 from pathlib import Path
 
 import pytest
 from git import Actor, Repo
-from git.exc import GitCommandError
+from git.exc import GitCommandError, UnsafeOptionError, UnsafeProtocolError
 from git.remote import Remote
 from typer.testing import CliRunner
 
@@ -29,6 +28,7 @@ from hostmark.services.repository import (
     sync_repository,
     validate_repository_attributes,
     validate_repository_marker,
+    validate_repository_metadata,
 )
 
 GIT_ACTOR = Actor("Hostmark Tests", "tests@example.com")
@@ -333,32 +333,91 @@ def test_linked_worktree_is_accepted_only_at_its_exact_root(tmp_path: Path) -> N
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="system Git is required")
-def test_autocrlf_clone_preserves_canonical_registry_lf(
+def test_autocrlf_hostmark_clone_preserves_canonical_repository_bytes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _, remote = _create_remote(tmp_path)
+    source, remote = _create_remote(tmp_path)
     config = tmp_path / "gitconfig"
     config.write_bytes(b"[core]\n\tautocrlf = true\n")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     clone = repository_paths(tmp_path / "autocrlf-clone")
 
-    with Repo.clone_from(
-        str(remote),
-        clone.root,
-        env={**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "echo"},
-        allow_unsafe_protocols=False,
-        allow_unsafe_options=False,
-    ):
-        pass
+    result = sync_repository(clone, remote=str(remote))
 
-    data = clone.registry.read_bytes()
-    assert b"\r\n" not in data
-    assert data.endswith(b"\n")
-    read_registry(clone.registry, require_canonical=True)
+    attributes_data = clone.attributes.read_bytes()
+    registry_data = clone.registry.read_bytes()
+    assert result.operation == "cloned"
+    assert attributes_data == REPOSITORY_ATTRIBUTES_BYTES
+    assert b"\r\n" not in attributes_data
+    assert registry_data == source.registry.read_bytes()
+    assert b"\r\n" not in registry_data
+    assert clone.marker.read_bytes() == b""
+    validate_repository_metadata(clone)
+    registry = read_registry(clone.registry, require_canonical=True).registry
+    assert canonical_bytes(registry) == registry_data
+    with Repo(clone.root, search_parent_directories=False) as repo:
+        repository_service._require_tracked_repository_files(repo, clone.root)
     validated = RUNNER.invoke(app, ["registry", "validate", "--registry", str(clone.registry)])
     assert validated.exit_code == 0, validated.output
+
+
+@pytest.mark.parametrize(
+    ("git_error", "expected_message"),
+    [
+        (
+            UnsafeProtocolError("ext::https://user:password@example.com/private.git"),
+            "Unsafe Git protocol is not allowed.",
+        ),
+        (
+            UnsafeOptionError("--upload-pack=https://user:password@example.com/helper"),
+            "Unsafe Git option is not allowed.",
+        ),
+    ],
+)
+def test_unsafe_gitpython_errors_become_concise_project_errors(
+    git_error: Exception,
+    expected_message: str,
+) -> None:
+    with pytest.raises(HostmarkError) as caught:
+        with repository_service._translate_git_failures("clone a credential-bearing remote"):
+            raise git_error
+
+    message = str(caught.value)
+    assert message == expected_message
+    assert "password" not in message
+    assert "example.com" not in message
+
+
+def test_unsafe_protocol_cli_error_has_no_traceback_or_credentials(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def reject_clone(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise UnsafeProtocolError("ext::https://user:password@example.com/private.git")
+
+    monkeypatch.setattr(Repo, "clone_from", reject_clone)
+    result = RUNNER.invoke(
+        app,
+        [
+            "repo",
+            "sync",
+            "--repo",
+            str(tmp_path / "clone"),
+            "--remote",
+            "ext::https://user:password@example.com/private.git",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Unsafe Git protocol is not allowed." in result.stderr
+    assert "Traceback" not in result.output
+    assert "UnsafeProtocolError" not in result.output
+    assert "UnsafeOptionError" not in result.output
+    assert "password" not in result.output
+    assert "example.com" not in result.output
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="system Git is required")
