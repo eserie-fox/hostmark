@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -8,12 +9,18 @@ from typer.testing import CliRunner
 import hostmark.commands.check as check_commands
 import hostmark.commands.identity as identity_commands
 import hostmark.commands.registry as registry_commands
+import hostmark.commands.repo as repo_commands
 from hostmark.cli import app
 from hostmark.domain.errors import HostmarkError
 from hostmark.domain.models import Registry
 from hostmark.services.host_state import check_host_state
 from hostmark.services.identity_store import IdentityPaths, LocalIdentity
 from hostmark.services.registry_store import initialize_registry, new_registry, resolve_registry_path
+from hostmark.services.repository import (
+    REPOSITORY_ATTRIBUTES_BYTES,
+    RepositorySyncResult,
+    repository_paths,
+)
 from hostmark.version import __version__
 from tests.helpers import HOST_A, HOST_B, active_host, canonical, registry, retired_host
 
@@ -26,7 +33,7 @@ def test_root_help_and_version() -> None:
 
     assert root.exit_code == 0
     assert "Usage:" in root.stdout
-    assert "identity" in root.stdout and "registry" in root.stdout and "check" in root.stdout
+    assert all(command in root.stdout for command in ("identity", "repo", "registry", "check"))
     assert version.exit_code == 0
     assert version.stdout == f"{__version__}\n"
 
@@ -263,28 +270,109 @@ def test_check_cli_success_and_stable_mismatch_exit(tmp_path: Path, monkeypatch:
     assert "hostname drift" in failure.stderr
 
 
-def test_explicit_environment_upward_and_init_path_resolution(tmp_path: Path) -> None:
+def test_direct_registry_overrides_preserve_old_layout_support(tmp_path: Path) -> None:
     explicit = resolve_registry_path(Path("chosen.json"), environ={}, cwd=tmp_path)
     configured = resolve_registry_path(None, environ={"HOSTMARK_REGISTRY": "env.json"}, cwd=tmp_path)
-    init_default = resolve_registry_path(None, environ={}, cwd=tmp_path / "empty", for_init=True)
-    root_registry = tmp_path / "registry" / "hosts.json"
-    root_registry.parent.mkdir()
-    root_registry.write_bytes(b"placeholder")
-    nested = tmp_path / "one" / "two"
-    nested.mkdir(parents=True)
-    discovered = resolve_registry_path(None, environ={}, cwd=nested)
+    old_layout = tmp_path / "old" / "registry" / "hosts.json"
 
     assert explicit == (tmp_path / "chosen.json").resolve()
     assert configured == (tmp_path / "env.json").resolve()
-    assert discovered == root_registry.resolve()
-    assert init_default == (tmp_path / "empty" / "registry" / "hosts.json").resolve()
+    assert resolve_registry_path(old_layout, environ={}, cwd=tmp_path) == old_layout.resolve()
 
 
-def test_missing_registry_path_message_lists_all_resolution_methods(tmp_path: Path) -> None:
+def test_registry_path_resolves_repository_env_ancestor_and_default(tmp_path: Path) -> None:
+    configured = repository_paths(tmp_path / "configured")
+    configured.root.mkdir()
+    configured.attributes.write_bytes(REPOSITORY_ATTRIBUTES_BYTES)
+    configured.marker.write_bytes(b"")
+    assert (
+        resolve_registry_path(None, environ={"HOSTMARK_REPO": str(configured.root)}, cwd=tmp_path)
+        == configured.registry
+    )
+
+    marked = repository_paths(tmp_path / "marked")
+    nested = marked.root / "one" / "two"
+    nested.mkdir(parents=True)
+    marked.attributes.write_bytes(REPOSITORY_ATTRIBUTES_BYTES)
+    marked.marker.write_bytes(b"")
+    assert resolve_registry_path(None, environ={}, cwd=nested) == marked.registry
+
+    home = tmp_path / "home"
+    default = repository_paths(home / ".local" / "share" / "hostmark" / "repo")
+    default.root.mkdir(parents=True)
+    default.attributes.write_bytes(REPOSITORY_ATTRIBUTES_BYTES)
+    default.marker.write_bytes(b"")
+    assert (
+        resolve_registry_path(None, environ={}, cwd=tmp_path / "isolated", platform_name="linux", home=home)
+        == default.registry
+    )
+
+
+def test_old_implicit_registry_layout_is_not_discovered_and_init_guidance_is_actionable(tmp_path: Path) -> None:
+    old = tmp_path / "registry" / "hosts.json"
+    old.parent.mkdir()
+    old.write_bytes(b"placeholder")
+    nested = tmp_path / "one" / "two"
+    nested.mkdir(parents=True)
+
     with pytest.raises(HostmarkError) as exc_info:
-        resolve_registry_path(None, environ={}, cwd=tmp_path)
+        resolve_registry_path(
+            None, environ={}, cwd=nested, platform_name="linux", home=tmp_path / "home", for_init=True
+        )
 
     message = str(exc_info.value)
     assert "--registry" in message
-    assert "HOSTMARK_REGISTRY" in message
-    assert "registry/hosts.json" in message
+    assert "hostmark repo init" in message
+    assert "registry/hosts.json" not in message
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="system Git is required")
+def test_repo_path_and_init_cli(tmp_path: Path) -> None:
+    paths = repository_paths(tmp_path / "inventory")
+    selected = RUNNER.invoke(app, ["repo", "path", "--repo", str(paths.root)])
+    assert not paths.root.exists()
+    initialized = RUNNER.invoke(
+        app,
+        [
+            "repo",
+            "init",
+            "--repo",
+            str(paths.root),
+            "--dns-suffix",
+            "node.infra.example.com",
+            "--site",
+            "nc1",
+        ],
+    )
+
+    assert selected.exit_code == 0, selected.output
+    assert f"Repository: {paths.root}" in selected.stdout
+    assert f"Attributes: {paths.attributes}" in selected.stdout
+    assert f"Marker:     {paths.marker}" in selected.stdout
+    assert initialized.exit_code == 0, initialized.output
+    assert "Git branch: main" in initialized.stdout
+    assert "git add .gitattributes HOSTMARK_REPOSITORY hosts.json" in initialized.stdout
+    assert "  cd " not in initialized.stdout
+
+
+def test_repo_sync_cli_summary_and_error_boundary(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    paths = repository_paths(tmp_path / "clone")
+    monkeypatch.setattr(
+        repo_commands,
+        "sync_repository",
+        lambda selected, remote=None: RepositorySyncResult(paths=selected, operation="cloned"),
+    )
+    success = RUNNER.invoke(app, ["repo", "sync", "--repo", str(paths.root), "--remote", "file:///remote.git"])
+
+    def fail_sync(selected: object, remote: str | None = None) -> RepositorySyncResult:
+        del selected, remote
+        raise HostmarkError("could not clone repository")
+
+    monkeypatch.setattr(repo_commands, "sync_repository", fail_sync)
+    failure = RUNNER.invoke(app, ["repo", "sync", "--repo", str(paths.root), "--remote", "file:///remote.git"])
+
+    assert success.exit_code == 0
+    assert f"Cloned repository: {paths.root}" in success.stdout
+    assert failure.exit_code == 1
+    assert "could not clone repository" in failure.stderr
+    assert "Traceback" not in failure.output

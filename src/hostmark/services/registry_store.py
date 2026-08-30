@@ -32,6 +32,7 @@ from hostmark.services.registry_validation import (
     validate_site_code,
     validate_snapshot,
 )
+from hostmark.services.repository import require_initialized_repository, resolve_repository_paths
 
 Clock = Callable[[], datetime]
 RegistryTransition = Callable[[Registry], Registry]
@@ -72,9 +73,11 @@ def resolve_registry_path(
     *,
     environ: Mapping[str, str] | None = None,
     cwd: Path | None = None,
+    platform_name: str | None = None,
+    home: Path | None = None,
     for_init: bool = False,
 ) -> Path:
-    """Resolve a registry path using CLI, environment, then upward discovery."""
+    """Resolve direct overrides before the canonical marked-repository location."""
 
     environment = os.environ if environ is None else environ
     working_directory = Path.cwd() if cwd is None else cwd
@@ -84,20 +87,22 @@ def resolve_registry_path(
     if configured:
         return _absolute_path(Path(configured), working_directory)
 
-    current = working_directory.expanduser().resolve()
-    while True:
-        candidate = current / "registry" / "hosts.json"
-        if candidate.is_file():
-            return candidate.resolve()
-        if current.parent == current:
-            break
-        current = current.parent
-
-    if for_init:
-        return (working_directory / "registry" / "hosts.json").expanduser().resolve()
-    raise HostmarkError(
-        "registry path not found; pass --registry PATH, set HOSTMARK_REGISTRY, or place the file at registry/hosts.json"
+    repository = resolve_repository_paths(
+        environ=environment,
+        cwd=working_directory,
+        platform_name=platform_name,
+        home=home,
     )
+    try:
+        require_initialized_repository(repository)
+    except HostmarkError as exc:
+        init_hint = "run 'hostmark repo init --dns-suffix <node-suffix> --site <site>'"
+        if for_init:
+            raise HostmarkError(f"{exc}; {init_hint}, or pass --registry PATH") from exc
+        raise HostmarkError(
+            f"{exc}; pass --registry PATH, set HOSTMARK_REGISTRY, set HOSTMARK_REPO, or {init_hint}"
+        ) from exc
+    return repository.registry
 
 
 def _absolute_path(path: Path, cwd: Path) -> Path:

@@ -47,17 +47,25 @@ def test_dry_run_emits_unified_lf_diff_and_does_not_write(tmp_path: Path) -> Non
     assert "\r" not in result.diff
 
 
-def test_mutation_atomically_replaces_and_preserves_permissions(tmp_path: Path) -> None:
+def test_mutation_atomically_replaces_registry(tmp_path: Path) -> None:
     path = tmp_path / "hosts.json"
     write_registry(path)
-    path.chmod(0o640)
 
     result = mutate_registry(path, lambda value: rename_host(value, selector=HOST_A, new_hostname="nc1-fox-02"))
 
     assert result.wrote is True
     assert b'"hostname": "nc1-fox-02"' in path.read_bytes()
-    if os.name == "posix":
-        assert stat.S_IMODE(path.stat().st_mode) == 0o640
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file modes are required")
+def test_mutation_preserves_posix_permissions(tmp_path: Path) -> None:
+    path = tmp_path / "hosts.json"
+    write_registry(path)
+    path.chmod(0o640)
+
+    mutate_registry(path, lambda value: rename_host(value, selector=HOST_A, new_hostname="nc1-fox-02"))
+
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
 
 
 def test_source_change_during_mutation_aborts_without_overwriting(tmp_path: Path) -> None:

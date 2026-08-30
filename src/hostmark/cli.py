@@ -7,6 +7,7 @@ import typer
 from hostmark.commands.check import check_command
 from hostmark.commands.identity import app as identity_app
 from hostmark.commands.registry import app as registry_app
+from hostmark.commands.repo import app as repo_app
 from hostmark.version import __version__
 
 app = typer.Typer(
@@ -18,6 +19,7 @@ app = typer.Typer(
     context_settings={"help_option_names": ["-h", "--help"]},
 )
 app.add_typer(identity_app, name="identity")
+app.add_typer(repo_app, name="repo")
 app.add_typer(registry_app, name="registry")
 app.command("check")(check_command)
 

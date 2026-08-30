@@ -20,10 +20,11 @@ domains, Cloudflare records, DDNS, credentials, runtime reachability, and monito
 and change rates. Putting them here would blur stable identity and intended naming with network discovery and service
 routing.
 
-The Python package contains the parser, invariants, services, and CLI. Private inventory lives in the repository's
-`registry/hosts.json` after an operator creates it. Setuptools, `MANIFEST.in`, CI, and artifact tests exclude the entire
-`registry/` directory from both wheel and sdist. The package therefore cannot embed either real inventory or the example
-registry.
+The Python package contains the parser, invariants, services, and CLI. Private inventory lives in a separate marked Git
+repository as root `hosts.json`; `HOSTMARK_REPOSITORY` is an empty root marker. The source-code checkout is not an
+inventory repository. Its tracked `.gitattributes` fixes marker and registry checkout semantics. Setuptools,
+`MANIFEST.in`, CI, and artifact checks prevent inventory, live markers, or the example registry from becoming package
+data.
 
 ## Runtime flow
 
@@ -32,6 +33,8 @@ registry.
 - Validation services enforce snapshot and historical invariants and produce canonical bytes.
 - Identity and registry stores own filesystem behavior, including exclusive identity creation and optimistic atomic
   registry replacement.
+- Repository services use GitPython's object API over the required system Git executable for marker/default discovery,
+  exact-worktree validation, safe clone/init, and origin-only fast-forward operations.
 - Host-state services own hostname normalization and read-only comparison.
 
 Every ordinary mutation starts from canonical bytes, retains their SHA-256 identity, applies one pure transition,
@@ -39,6 +42,7 @@ validates and serializes the candidate, rechecks the source, atomically replaces
 
 ## Deliberate operational limits
 
-Hostmark runs only when invoked. It has no daemon, scheduler, startup installer, DNS request, reachability probe, or Git
-invocation. Drift detection does not remediate anything. Operators decide when to change an OS hostname and when to
-commit registry changes.
+Hostmark runs only when invoked. It has no daemon, scheduler, startup installer, DNS request, or reachability probe.
+Only `repo init` and `repo sync` invoke Git; no command commits or pushes, and `check` never synchronizes. Drift detection
+does not remediate anything. Operators decide when to change an OS hostname and when to commit registry changes. See the
+[inventory repository contract](repository.md).

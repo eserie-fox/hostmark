@@ -9,7 +9,9 @@ Hostmark releases are built and published to FoxPI by GitHub Actions. Do not pub
    `scripts/release/compare_artifacts.py` requires identical wheel bytes and identical extracted sdist paths, contents,
    normalized modes, entry types, and symlink targets. Record raw sdist hashes but ignore only container metadata.
 3. Inspect wheel and sdist members, then install the wheel in a clean temporary environment. Verify import,
-   `hostmark --version`, `python -m hostmark --version`, and root help.
+   `hostmark --version`, `python -m hostmark --version`, root help, and `hostmark repo --help`. Neither artifact may
+   contain `hosts.json`, a live `HOSTMARK_REPOSITORY` data file, `.git` metadata, or an inventory worktree. Wheel metadata
+   must contain `GitPython>=3.1.59,<4` as a runtime requirement.
 4. If a separate source archive is needed, create it from tracked files, for example with `git archive`, rather than
    archiving a working directory containing `.git`, `.venv`, caches, or `dist`.
 5. Merge the exact validated commit to `main` and wait for CI. The intended tag is `v<version>` and must equal `v` plus
