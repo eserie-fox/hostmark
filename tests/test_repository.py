@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
+import re
 import shutil
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -38,6 +41,34 @@ REQUIRED_PATHS = {
     REPOSITORY_MARKER_NAME,
     REPOSITORY_REGISTRY_NAME,
 }
+TEST_GIT_CONFIG_BYTES = b'[protocol "file"]\n\tallow = always\n'
+GIT_ENVIRONMENT_OVERRIDES = {
+    "GIT_ALLOW_PROTOCOL",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_DIR",
+    "GIT_EXEC_PATH",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_PROTOCOL_FROM_USER",
+    "GIT_SHALLOW_FILE",
+    "GIT_TEMPLATE_DIR",
+    "GIT_WORK_TREE",
+}
+
+
+@pytest.fixture(autouse=True)
+def isolate_git_configuration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in tuple(os.environ):
+        normalized_name = name.upper()
+        if normalized_name.startswith("GIT_CONFIG_") or normalized_name in GIT_ENVIRONMENT_OVERRIDES:
+            monkeypatch.delenv(name, raising=False)
+    config = tmp_path / "hostmark-test.gitconfig"
+    config.write_bytes(TEST_GIT_CONFIG_BYTES)
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setenv("GIT_ATTR_NOSYSTEM", "1")
 
 
 @pytest.mark.parametrize(
@@ -203,14 +234,30 @@ def test_sync_requires_remote_and_system_git_for_new_repository(
     with pytest.raises(HostmarkError, match="git is not available"):
         sync_repository(paths, remote=str(tmp_path / "remote.git"))
 
-    git_environment = repository_service._git_environment("git@example.com:infra/hosts.git")
-    assert git_environment["GIT_TERMINAL_PROMPT"] == "0"
-    assert git_environment["GIT_ASKPASS"] == "echo"
-    assert "BatchMode=yes" in git_environment["GIT_SSH_COMMAND"]
-    assert "StrictHostKeyChecking=accept-new" in git_environment["GIT_SSH_COMMAND"]
-    assert "https://<redacted>@example.com" in repository_service._redact_url_userinfo(
-        "https://user:password@example.com/repo.git"
-    )
+
+def test_sync_passes_noninteractive_environment_to_ssh_clone(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fail_clone(*args: object, **kwargs: object) -> None:
+        del args
+        captured.update(kwargs)
+        raise GitCommandError(["git", "clone"], 128, stderr="synthetic clone failure")
+
+    monkeypatch.setattr(repository_service.shutil, "which", lambda command: "git")
+    monkeypatch.setattr(Repo, "clone_from", fail_clone)
+
+    with pytest.raises(HostmarkError, match="could not clone"):
+        sync_repository(repository_paths(tmp_path / "clone"), remote="git@example.com:infra/hosts.git")
+
+    environment = captured["env"]
+    assert isinstance(environment, Mapping)
+    assert environment["GIT_TERMINAL_PROMPT"] == "0"
+    assert environment["GIT_ASKPASS"] == "echo"
+    assert "BatchMode=yes" in environment["GIT_SSH_COMMAND"]
+    assert "StrictHostKeyChecking=accept-new" in environment["GIT_SSH_COMMAND"]
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="system Git is required")
@@ -222,9 +269,11 @@ def test_sync_clones_absent_and_empty_targets_and_validates_registry(tmp_path: P
 
     result = sync_repository(clone, remote=str(remote))
     empty_result = sync_repository(empty_clone, remote=str(remote))
+    updated_result = sync_repository(clone, remote=str(remote))
 
     assert result.operation == "cloned"
     assert empty_result.operation == "cloned"
+    assert updated_result.operation == "updated"
     assert clone.attributes.read_bytes() == REPOSITORY_ATTRIBUTES_BYTES
     assert clone.marker.read_bytes() == b""
     assert (
@@ -264,7 +313,7 @@ def test_sync_requires_every_hostmark_file_to_be_tracked(tmp_path: Path, require
     with Repo(clone.root, search_parent_directories=False) as repo:
         repo.index.remove([required_path], working_tree=False)
 
-    with pytest.raises(HostmarkError, match=required_path):
+    with pytest.raises(HostmarkError, match=re.escape(required_path)):
         sync_repository(clone)
 
 
@@ -289,9 +338,8 @@ def test_sync_requires_origin_tracking_branch_and_matching_remote(tmp_path: Path
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="system Git is required")
-def test_sync_rejects_detached_missing_upstream_origin_and_non_repository(tmp_path: Path) -> None:
+def test_sync_rejects_detached_head(tmp_path: Path) -> None:
     _, remote = _create_remote(tmp_path)
-
     detached = repository_paths(tmp_path / "detached")
     sync_repository(detached, remote=str(remote))
     with Repo(detached.root, search_parent_directories=False) as repo:
@@ -299,6 +347,10 @@ def test_sync_rejects_detached_missing_upstream_origin_and_non_repository(tmp_pa
     with pytest.raises(HostmarkError, match="detached HEAD"):
         sync_repository(detached)
 
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="system Git is required")
+def test_sync_rejects_missing_upstream(tmp_path: Path) -> None:
+    _, remote = _create_remote(tmp_path)
     no_upstream = repository_paths(tmp_path / "no-upstream")
     sync_repository(no_upstream, remote=str(remote))
     with Repo(no_upstream.root, search_parent_directories=False) as repo:
@@ -306,6 +358,10 @@ def test_sync_rejects_detached_missing_upstream_origin_and_non_repository(tmp_pa
     with pytest.raises(HostmarkError, match="no upstream"):
         sync_repository(no_upstream)
 
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="system Git is required")
+def test_sync_rejects_missing_origin(tmp_path: Path) -> None:
+    _, remote = _create_remote(tmp_path)
     no_origin = repository_paths(tmp_path / "no-origin")
     sync_repository(no_origin, remote=str(remote))
     with Repo(no_origin.root, search_parent_directories=False) as repo:
@@ -313,6 +369,9 @@ def test_sync_rejects_detached_missing_upstream_origin_and_non_repository(tmp_pa
     with pytest.raises(HostmarkError, match="no origin"):
         sync_repository(no_origin)
 
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="system Git is required")
+def test_sync_rejects_non_repository(tmp_path: Path) -> None:
     not_git = repository_paths(tmp_path / "not-git")
     not_git.root.mkdir()
     _write_repository_metadata(not_git)
@@ -321,7 +380,7 @@ def test_sync_rejects_detached_missing_upstream_origin_and_non_repository(tmp_pa
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="system Git is required")
-def test_linked_worktree_is_accepted_only_at_its_exact_root(tmp_path: Path) -> None:
+def test_linked_worktree_is_accepted_at_its_exact_root_and_rejected_below_it(tmp_path: Path) -> None:
     source, _ = _create_remote(tmp_path)
     linked_root = tmp_path / "linked"
     with Repo(source.root, search_parent_directories=False) as repo:
@@ -331,6 +390,12 @@ def test_linked_worktree_is_accepted_only_at_its_exact_root(tmp_path: Path) -> N
     result = sync_repository(repository_paths(linked_root))
     assert result.operation == "updated"
 
+    nested = repository_paths(linked_root / "nested")
+    nested.root.mkdir()
+    _write_repository_metadata(nested)
+    with pytest.raises(HostmarkError, match="not a Git worktree"):
+        sync_repository(nested)
+
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="system Git is required")
 def test_autocrlf_hostmark_clone_preserves_canonical_repository_bytes(
@@ -339,7 +404,7 @@ def test_autocrlf_hostmark_clone_preserves_canonical_repository_bytes(
 ) -> None:
     source, remote = _create_remote(tmp_path)
     config = tmp_path / "gitconfig"
-    config.write_bytes(b"[core]\n\tautocrlf = true\n")
+    config.write_bytes(TEST_GIT_CONFIG_BYTES + b"[core]\n\tautocrlf = true\n")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(config))
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     clone = repository_paths(tmp_path / "autocrlf-clone")
@@ -357,8 +422,6 @@ def test_autocrlf_hostmark_clone_preserves_canonical_repository_bytes(
     validate_repository_metadata(clone)
     registry = read_registry(clone.registry, require_canonical=True).registry
     assert canonical_bytes(registry) == registry_data
-    with Repo(clone.root, search_parent_directories=False) as repo:
-        repository_service._require_tracked_repository_files(repo, clone.root)
     validated = RUNNER.invoke(app, ["registry", "validate", "--registry", str(clone.registry)])
     assert validated.exit_code == 0, validated.output
 
@@ -376,27 +439,15 @@ def test_autocrlf_hostmark_clone_preserves_canonical_repository_bytes(
         ),
     ],
 )
-def test_unsafe_gitpython_errors_become_concise_project_errors(
+def test_unsafe_gitpython_errors_cross_cli_boundary_without_details(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     git_error: Exception,
     expected_message: str,
 ) -> None:
-    with pytest.raises(HostmarkError) as caught:
-        with repository_service._translate_git_failures("clone a credential-bearing remote"):
-            raise git_error
-
-    message = str(caught.value)
-    assert message == expected_message
-    assert "password" not in message
-    assert "example.com" not in message
-
-
-def test_unsafe_protocol_cli_error_has_no_traceback_or_credentials(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
     def reject_clone(*args: object, **kwargs: object) -> None:
         del args, kwargs
-        raise UnsafeProtocolError("ext::https://user:password@example.com/private.git")
+        raise git_error
 
     monkeypatch.setattr(Repo, "clone_from", reject_clone)
     result = RUNNER.invoke(
@@ -412,7 +463,8 @@ def test_unsafe_protocol_cli_error_has_no_traceback_or_credentials(
     )
 
     assert result.exit_code == 1
-    assert "Unsafe Git protocol is not allowed." in result.stderr
+    assert result.stderr.startswith("Error: ")
+    assert expected_message in result.stderr
     assert "Traceback" not in result.output
     assert "UnsafeProtocolError" not in result.output
     assert "UnsafeOptionError" not in result.output

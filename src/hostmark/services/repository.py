@@ -215,7 +215,7 @@ def sync_repository(paths: RepositoryPaths, *, remote: str | None = None) -> Rep
         _require_tracked_repository_files(repo, paths.root)
         remote_branch, origin = _origin_tracking(repo, paths.root)
         origin_url = _origin_url(origin, paths.root)
-        if remote is not None and remote != origin_url:
+        if remote is not None and not _remote_urls_match(origin_url, remote):
             raise HostmarkError(f"supplied --remote does not match the configured origin for {paths.root}")
         with _translate_git_failures(f"inspect tracked Git status at {paths.root}"):
             dirty = repo.is_dirty(
@@ -332,7 +332,7 @@ def _clone_repository(paths: RepositoryPaths, remote_url: str) -> None:
         try:
             _verify_worktree_root(repo, paths.root)
             origin = _require_origin(repo, paths.root)
-            if _origin_url(origin, paths.root) != remote_url:
+            if not _remote_urls_match(_origin_url(origin, paths.root), remote_url):
                 raise HostmarkError(f"cloned repository origin does not match the requested remote: {paths.root}")
             _validate_after_sync(paths, repo)
         finally:
@@ -413,6 +413,24 @@ def _require_origin(repo: Repo, root: Path) -> Remote:
 def _origin_url(origin: Remote, root: Path) -> str:
     with _translate_git_failures(f"read origin remote at {root}"):
         return origin.url
+
+
+def _remote_urls_match(configured: str, supplied: str, *, platform_name: str | None = None) -> bool:
+    if configured == supplied:
+        return True
+    platform_value = sys.platform if platform_name is None else platform_name
+    if platform_value not in {"win32", "cygwin"}:
+        return False
+    configured_path = _normalized_windows_remote_path(configured)
+    supplied_path = _normalized_windows_remote_path(supplied)
+    return configured_path is not None and configured_path == supplied_path
+
+
+def _normalized_windows_remote_path(remote: str) -> str | None:
+    normalized = remote.replace("\\", "/")
+    if re.match(r"^[a-zA-Z]:/", normalized) or normalized.startswith("//"):
+        return normalized
+    return None
 
 
 def _require_tracked_repository_files(repo: Repo, root: Path) -> None:

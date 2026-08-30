@@ -26,8 +26,9 @@ Run both `make check` and `make build` for release validation, and run `git diff
 runs do not build a wheel or create a nested virtual environment; the explicit build target and CI package job own those
 checks. Tests never write `/etc`, ProgramData, or `/Library`; platform paths, clock, UUID generation, hostname reading,
 transaction timing are injected at service boundaries. Repository integration tests use GitPython with temporary local
-bare Git repositories only, explicit test actors, and no network access. One test supplies a temporary Git configuration
-with `core.autocrlf=true`; it never changes the user's global configuration.
+bare Git repositories only, explicit test actors, an isolated temporary Git configuration, and no network access. One
+test adds `core.autocrlf=true` to that temporary configuration; tests never read or change the user's global Git
+configuration.
 
 ## Registry fixtures
 

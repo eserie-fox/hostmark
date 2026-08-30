@@ -120,8 +120,8 @@ An absent or empty target requires `--remote` and is cloned. An existing reposit
 attributes and marker bytes, be the exact Git worktree root, track an `origin/*` branch, contain all three required files
 as stage-zero index entries, and have no tracked changes. A branch tracking `backup/*` or any other remote is rejected.
 Unrelated untracked files do not block synchronization, but untracked attributes, marker, or registry files never qualify
-an unrelated Git repository as an inventory. A supplied `--remote` must exactly match `origin`; Hostmark never changes
-the remote or upstream.
+an unrelated Git repository as an inventory. A supplied `--remote` must exactly match `origin`, apart from the slash
+normalization Git applies to local Windows paths; Hostmark never changes the remote or upstream.
 
 Hostmark uses GitPython as a typed interface while retaining the system Git executable. System credential helpers, the
 SSH agent/configuration, and known-hosts behavior remain authoritative. Hostmark disables terminal credential prompts;
