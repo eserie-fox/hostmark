@@ -2,7 +2,8 @@
 
 `hostmark` is a cross-platform CLI for a stable local host identity and a Git-managed canonical hostname registry. It
 stores one UUIDv4 on each operating-system instance, maps that identifier to an intended short hostname, and reports
-hostname drift on demand. It never changes the operating-system hostname, DNS, Cloudflare, Git, or startup settings.
+hostname drift on demand. It never changes the operating-system hostname, DNS, Cloudflare, or startup settings. Its
+bounded Git support initializes, clones, or fast-forwards the inventory repository only when explicitly requested.
 
 The local UUID answers “which operating-system instance is this?” The registry hostname answers “what should this
 instance be called?” A hostname can change while the UUID remains stable. A retired UUID and every hostname it has
@@ -28,13 +29,26 @@ uv run hostmark --version
 
 ## Quick start
 
-Create the real, private source-of-truth registry with your actual node suffix. The `--site` option is repeatable.
+Create the first private inventory repository at the platform-specific user default. The `--site` option is repeatable.
 
 ```bash
-hostmark registry init \
-  --registry registry/hosts.json \
+hostmark repo init \
   --dns-suffix <real-node-suffix> \
   --site nc1
+hostmark repo path
+cd <printed-repository>
+git add HOSTMARK_REPOSITORY hosts.json
+git commit -m "Initialize hostmark repository"
+git remote add origin <remote-url>
+git push -u origin main
+```
+
+`repo init` creates an unborn `main` branch, an empty marker, and a canonical empty registry. It does not stage, commit,
+configure a remote, or push. On another machine, clone through Hostmark and then check local state:
+
+```bash
+hostmark repo sync --remote <remote-url>
+hostmark check
 ```
 
 Initialize the stable local identity. System scope is recommended and normally requires elevation on Linux and macOS.
@@ -53,16 +67,15 @@ becomes an independent operating-system instance.
 Register the current machine, using its discovered local identity:
 
 ```bash
-hostmark registry register nc1-orange --registry registry/hosts.json
-hostmark check --registry registry/hosts.json
+hostmark registry register nc1-orange
+hostmark check
 ```
 
 An administrator can register another machine using a synthetic-style explicit ID:
 
 ```bash
 hostmark registry register nc1-fox-01 \
-  --host-id f0c5ebce-b37e-45d5-9f62-5c5a12f25116 \
-  --registry registry/hosts.json
+  --host-id f0c5ebce-b37e-45d5-9f62-5c5a12f25116
 ```
 
 Rename the same identity in the registry first:
@@ -70,10 +83,10 @@ Rename the same identity in the registry first:
 ```bash
 hostmark registry rename nc1-fox-01 nc1-fox-02 --dry-run
 hostmark registry rename nc1-fox-01 nc1-fox-02
-git diff -- registry/hosts.json
-hostmark check --registry registry/hosts.json  # expected mismatch
+git diff -- hosts.json
+hostmark check  # expected mismatch
 # Manually change the operating-system hostname after review.
-hostmark check --registry registry/hosts.json  # must now succeed
+hostmark check  # must now succeed
 ```
 
 Commit and review the registry update before changing the operating-system hostname. The first `check` deliberately
@@ -94,24 +107,34 @@ fields. Never delete host tombstones or reuse names. After editing, canonicalize
 it with the authoritative base revision:
 
 ```bash
-hostmark registry format --registry registry/hosts.json
-hostmark registry validate --registry registry/hosts.json
+hostmark registry format --registry hosts.json
+hostmark registry validate --registry hosts.json
 hostmark registry validate \
-  --registry registry/hosts.json \
+  --registry hosts.json \
   --against /tmp/hosts.base.json
-git diff -- registry/hosts.json
+git diff -- hosts.json
 ```
 
 `registry format --check` only checks bytes. Formatting can reorder canonical arrays and object fields, but it refuses
 semantic errors and never repairs identity or lifecycle data.
+
+The normal read-only daily sequence is explicit:
+
+```bash
+hostmark repo sync && hostmark check
+```
+
+`repo sync` rejects tracked changes, ignores untracked files, uses `git pull --ff-only`, validates `hosts.json`, and never
+pushes. `check` itself never invokes Git or performs network access. See the
+[repository workflow](docs/repository.md) for discovery defaults, authentication behavior, and v0.1 migration.
 
 ## Scope and non-goals
 
 Hostmark stores only UUID identity, hostname history, lifecycle metadata, sites, notes, and the DNS suffix used to compute
 `hostname + "." + dns_suffix`. It deliberately excludes IP addresses, MAC addresses, DHCP, hypervisors, service names,
 service domains, ports, DNS records, Cloudflare, credentials, reachability, and monitoring. There is no daemon, boot-time
-service, automatic hostname remediation, Git automation, network probe, central server, database, identity reset, host
-deletion, unretirement, or hostname allocation/reuse command.
+service, automatic hostname remediation, automatic Git commit/push, network probe, central server, database, identity
+reset, host deletion, unretirement, or hostname allocation/reuse command.
 
 See [the CLI reference](docs/cli.md), [schema reference](docs/registry-schema.md), and
 [lifecycle guide](docs/lifecycle.md) for the complete contract.

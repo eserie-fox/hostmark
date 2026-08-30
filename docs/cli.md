@@ -1,8 +1,24 @@
 # CLI reference
 
-Running `hostmark` shows help and succeeds. `hostmark --version` prints only the version. Every registry-related command
-and `check` accepts `--registry PATH` / `-r PATH`. Resolution is explicit option, `HOSTMARK_REGISTRY`, upward search for
-`registry/hosts.json`, then—only for `registry init`—`./registry/hosts.json`.
+Running `hostmark` shows help and succeeds. `hostmark --version` prints only the version. Repository discovery uses
+`--repo`, `HOSTMARK_REPO`, the nearest ancestor `HOSTMARK_REPOSITORY`, then the user default. Every registry-related
+command and `check` accepts `--registry PATH` / `-r PATH`. Registry resolution uses that direct option,
+`HOSTMARK_REGISTRY`, `HOSTMARK_REPO`, the nearest marked ancestor, then the initialized user default. Repository-derived
+registries are root `hosts.json`; direct overrides do not require a marker.
+
+## Repository commands
+
+- `repo path [--repo PATH]` prints the absolute repository, marker, and registry paths. It performs no creation or Git
+  operation. A nonexistent selected path is informational; an existing invalid marker is an error.
+- `repo init --dns-suffix SUFFIX --site SITE... [--repo PATH]` accepts an absent or empty target, initializes an unborn
+  Git `main` branch, writes a zero-byte marker and canonical empty registry, and prints manual Git next steps. It does not
+  stage, commit, configure a remote, push, or create/register a local identity.
+- `repo sync [--repo PATH] [--remote URL]` clones an absent or empty target when a remote is supplied. Existing marked
+  repositories must be clean of tracked changes, be the Git worktree root, have `origin`, and use an attached tracking
+  branch. A supplied remote must equal `origin`. Sync runs `git pull --ff-only`, ignores untracked files, never pushes,
+  and validates the marker plus canonical registry afterward.
+
+Full repository defaults, authentication, safety, and migration behavior are in [repository.md](repository.md).
 
 ## Identity commands
 
@@ -33,11 +49,11 @@ an LF-only unified diff, does not write, and succeeds when the candidate is vali
 
 ## Check
 
-`check [-r PATH]` discovers local identity, validates the registry, rejects an unknown or retired UUID, reads
+`check [-r PATH]` discovers local identity, validates the local registry, rejects an unknown or retired UUID, reads
 `socket.gethostname()`, removes whitespace/trailing dot/FQDN suffix, and compares the lower-case short name. Case-only
 Windows presentation is not drift. A mismatch that equals the record's previous hostname says so explicitly. Output on
 success includes identity path, UUID, registry name, raw actual name, expected FQDN, and match status. It makes no network,
-Git, DNS, or mutation call.
+Git, network, DNS, or mutation call. Use `hostmark repo sync && hostmark check` when an explicit pull is wanted.
 
 ## Exit codes
 

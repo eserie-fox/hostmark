@@ -2,6 +2,14 @@
 
 All notable changes to hostmark are documented here.
 
+## 0.2.0 - 2026-08-30
+
+- Add zero-byte `HOSTMARK_REPOSITORY` marker discovery with root-level `hosts.json` registries.
+- Add stable per-user repository defaults for Linux, macOS, and Windows.
+- Add `repo path`, local unborn-main `repo init`, and noninteractive clone/fast-forward `repo sync` commands.
+- Preserve direct registry-file overrides while removing implicit `registry/hosts.json` upward discovery.
+- Validate canonical registry state after every clone or pull without committing, pushing, or remediating automatically.
+
 ## 0.1.0 - 2026-08-29
 
 - Add cross-platform UUIDv4 local identity initialization and discovery.

@@ -18,8 +18,15 @@ def test_artifact_verifier_reads_version_source_dynamically(tmp_path: Path) -> N
     verifier = runpy.run_path(str(ROOT / "scripts" / "verify_artifacts.py"))
     read_project_version = verifier["read_project_version"]
     verify_artifacts = verifier["verify_artifacts"]
+    verify_member_privacy = verifier["_verify_member_privacy"]
     artifact_error = verifier["ArtifactError"]
 
     assert read_project_version(tmp_path) == "9.8.7"
     with pytest.raises(artifact_error, match=r"hostmark-9\.8\.7-py3-none-any\.whl.*hostmark-9\.8\.7\.tar\.gz"):
         verify_artifacts(output, project_root=tmp_path)
+    with pytest.raises(artifact_error, match="live repository marker"):
+        verify_member_privacy(
+            ["hostmark-9.8.7/HOSTMARK_REPOSITORY"],
+            artifact="sdist",
+            forbid_tests=False,
+        )

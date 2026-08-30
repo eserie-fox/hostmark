@@ -49,3 +49,7 @@ not. Reverse “replaces” relationships are derived when displaying a record a
 
 Tombstones retain ownership and explain history. They must remain in Git even after hardware, disks, and service
 configuration are gone.
+
+The marked inventory repository is only a transport for this history. `repo sync` fast-forwards and validates it but
+never creates, deletes, renames, retires, commits, or pushes a record. Operators still review and commit every lifecycle
+transition manually. See [the repository workflow](repository.md) for synchronization and v0.1 layout migration.

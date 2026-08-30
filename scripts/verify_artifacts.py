@@ -102,6 +102,8 @@ def _verify_member_privacy(members: Iterable[str], *, artifact: str, forbid_test
             raise ArtifactError(f"{artifact} contains a machine-local file: {member}")
         if PurePosixPath(member).name == "host-id":
             raise ArtifactError(f"{artifact} contains machine-local identity data: {member}")
+        if PurePosixPath(member).name == "HOSTMARK_REPOSITORY":
+            raise ArtifactError(f"{artifact} contains a live repository marker: {member}")
         if member.endswith(("hosts.json", "hosts.example.json")):
             raise ArtifactError(f"{artifact} contains host inventory: {member}")
 
