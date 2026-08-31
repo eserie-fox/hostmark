@@ -28,7 +28,7 @@ GitHub. Do not publish locally.
 7. After publication, smoke-test the release from the normal public package index:
 
    ```bash
-   uv tool run --from hostmark==<version> hostmark --version
+   uv tool run --from "hostmark==<version>" hostmark --version
    ```
 
    In a separate clean Python environment, also run:

@@ -33,7 +33,16 @@ jobs:
         run: uv python install 3.11
 
       - name: Set deterministic build epoch
-        run: echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct \"$GITHUB_SHA\")" >> "$GITHUB_ENV"
+        run: |
+          if ! source_date_epoch="$(git show -s --format=%ct "$GITHUB_SHA")"; then
+            echo "failed to derive SOURCE_DATE_EPOCH from GITHUB_SHA=$GITHUB_SHA" >&2
+            exit 1
+          fi
+          if [[ ! "$source_date_epoch" =~ ^[0-9]+$ ]]; then
+            echo "invalid SOURCE_DATE_EPOCH derived from GITHUB_SHA: $source_date_epoch" >&2
+            exit 1
+          fi
+          printf 'SOURCE_DATE_EPOCH=%s\n' "$source_date_epoch" >> "$GITHUB_ENV"
 
       - name: Verify release source
         run: |
