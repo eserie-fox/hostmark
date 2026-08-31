@@ -13,6 +13,14 @@ license-files = ["LICENSE"]
 authors = [
     {name = "eserie-fox"},
 ]
+keywords = [
+    "hostname",
+    "host-identity",
+    "inventory",
+    "git",
+    "cli",
+    "systems-administration",
+]
 dependencies = [
     "GitPython>=3.1.59,<4",
     "pydantic>=2.7",
@@ -21,19 +29,24 @@ dependencies = [
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
+    "Intended Audience :: System Administrators",
     "Operating System :: MacOS",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Networking",
+    "Topic :: System :: Systems Administration",
     "Typing :: Typed",
 ]
 
 [project.urls]
 Homepage = "https://github.com/eserie-fox/hostmark"
 Repository = "https://github.com/eserie-fox/hostmark"
+Issues = "https://github.com/eserie-fox/hostmark/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -85,10 +98,3 @@ warn_unused_ignores = true
 [[tool.mypy.overrides]]
 module = ["tests.*"]
 disallow_untyped_defs = false
-
-[[tool.uv.index]]
-name = "foxpi"
-url = "https://foxpi.foxenz.com/publisher/prod/+simple/"
-publish-url = "https://foxpi.foxenz.com/publisher/prod/"
-explicit = true
-authenticate = "always"

@@ -9,16 +9,34 @@ The local UUID answers “which operating-system instance is this?” The regist
 instance be called?” A hostname can change while the UUID remains stable. A retired UUID and every hostname it has
 owned remain as permanent tombstones. Host IDs are identifiers, not authentication credentials or secrets.
 
-## Install from FoxPI
+## Installation
 
-Hostmark is intended for the private FoxPI index, not public PyPI. Configure the index and authenticate with placeholders
-or an interactive credential store; never put a real password in a repository or command history.
+Install the Hostmark CLI from PyPI with uv:
 
 ```bash
-uv auth login foxpi.foxenz.com --username <foxpi-username>
-uv tool install hostmark \
-  --index https://foxpi.foxenz.com/publisher/prod/+simple/
+uv tool install hostmark
 ```
+
+`pipx` provides another isolated CLI installation:
+
+```bash
+pipx install hostmark
+```
+
+For a normal Python environment, use pip:
+
+```bash
+python -m pip install hostmark
+```
+
+Install a specific release when reproducibility requires a pin:
+
+```bash
+uv tool install "hostmark==0.2.0"
+```
+
+The Hostmark source package is public. Real Hostmark inventory repositories should normally remain private because they
+may contain hostnames, UUIDs, operator notes, and site topology. No inventory data ships inside the PyPI package.
 
 For development from this checkout:
 
