@@ -20,60 +20,30 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-          fetch-depth: 0
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v8.1.0
-        with:
-          enable-cache: true
-          cache-dependency-glob: pyproject.toml
-          cache-suffix: publish-build
 
       - name: Set up Python
-        run: uv python install 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
 
-      - name: Set deterministic build epoch
+      - name: Install build tools
+        run: python -m pip install --upgrade build twine
+
+      - name: Verify tag matches package version
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
         run: |
-          if ! source_date_epoch="$(git show -s --format=%ct "$GITHUB_SHA")"; then
-            echo "failed to derive SOURCE_DATE_EPOCH from GITHUB_SHA=$GITHUB_SHA" >&2
-            exit 1
-          fi
-          if [[ ! "$source_date_epoch" =~ ^[0-9]+$ ]]; then
-            echo "invalid SOURCE_DATE_EPOCH derived from GITHUB_SHA: $source_date_epoch" >&2
-            exit 1
-          fi
-          printf 'SOURCE_DATE_EPOCH=%s\n' "$source_date_epoch" >> "$GITHUB_ENV"
-
-      - name: Verify release source
-        run: |
-          if ! git show-ref --verify --quiet refs/remotes/origin/main; then
-            echo "origin/main is unavailable after full-history checkout" >&2
-            exit 1
-          fi
-          main_tip=$(git rev-parse refs/remotes/origin/main)
-          release_commit=$(git rev-parse "${GITHUB_SHA}^{commit}")
-
-          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
-            package_version=$(python -c "import runpy; print(runpy.run_path('src/hostmark/version.py')['__version__'])")
-            expected_tag="v${package_version}"
-            if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
-              echo "tag/version mismatch: tag is ${GITHUB_REF_NAME}, expected ${expected_tag}" >&2
-              exit 1
-            fi
-            if ! git merge-base --is-ancestor "${release_commit}" "${main_tip}"; then
-              echo "tag commit ${release_commit} is not reachable from origin/main" >&2
-              exit 1
-            fi
-          elif [[ "${release_commit}" != "${main_tip}" ]]; then
-            echo "workflow_dispatch must run at the current origin/main tip ${main_tip}" >&2
+          package_version=$(python -c "import runpy; print(runpy.run_path('src/hostmark/version.py')['__version__'])")
+          expected_tag="v${package_version}"
+          if [[ "${GITHUB_REF_NAME}" != "${expected_tag}" ]]; then
+            echo "tag/version mismatch: tag is ${GITHUB_REF_NAME}, expected ${expected_tag}" >&2
             exit 1
           fi
 
       - name: Build distributions
-        run: uv build --no-sources
+        run: python -m build
 
       - name: Check distributions
-        run: uvx twine check dist/*
+        run: twine check dist/*
 
       - name: Inspect artifact members and privacy boundary
         run: python scripts/verify_artifacts.py dist

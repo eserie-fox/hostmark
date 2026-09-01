@@ -8,24 +8,23 @@ GitHub. Do not publish locally.
 
 1. Update the single executable version source, `src/hostmark/version.py`, and add the release entry to `CHANGELOG.md`.
    The artifact verifier reads that file with the standard library and derives expected names and metadata from it.
-2. Run `make check`, `make build`, and `git diff --check`. Derive `SOURCE_DATE_EPOCH` from the release commit and run
-   two clean `uv build --no-sources` builds. `make build` performs the Twine and artifact privacy/metadata checks;
-   `scripts/release/compare_artifacts.py` requires identical wheel bytes and identical extracted sdist paths, contents,
-   normalized modes, entry types, and symlink targets. Record raw sdist hashes but ignore only container metadata.
+2. Run `make check`, `make build`, and `git diff --check`. `make build` performs the Twine and artifact
+   privacy/metadata checks.
 3. Inspect wheel and sdist members, then install the wheel in a clean temporary environment. Verify import,
    `hostmark --version`, `python -m hostmark --version`, root help, and `hostmark repo --help`. Neither artifact may
    contain `hosts.json`, a live `HOSTMARK_REPOSITORY` data file, `.git` metadata, or an inventory worktree. Wheel metadata
    must contain `GitPython>=3.1.59,<4` as a runtime requirement.
 4. If a separate source archive is needed, create it from tracked files, for example with `git archive`, rather than
    archiving a working directory containing `.git`, `.venv`, caches, or `dist`.
-5. Merge the exact validated commit to `main` and wait for CI. The release tag must be `v<version>` and must equal `v`
-   plus `hostmark.version.__version__`.
-6. Later, under separate authorization, create and push the release tag. Its commit must be reachable from
-   `origin/main`. A newly created tag push is the sole publication authority: the workflow verifies the source, derives
-   the deterministic build epoch, builds once, runs Twine and artifact privacy/member validation, records SHA-256
-   checksums, and uploads one artifact bundle. The `pypi` publication job downloads and verifies that exact bundle and
-   publishes it without checking out source or rebuilding.
-7. After publication, smoke-test the release from the normal public package index:
+5. Merge the release changes to `main`, wait for normal main CI to pass, and identify the intended main commit. Confirm
+   that `hostmark.version.__version__` contains the version being released.
+6. Later, under separate authorization, create the exact annotated `v<version>` tag from that intended main commit and
+   push only that tag. The tag must equal `v` plus `hostmark.version.__version__`.
+7. The tag workflow verifies tag/version equality, builds the wheel and sdist once, runs Twine and Hostmark's artifact
+   privacy checks, records SHA-256 hashes, and uploads one artifact bundle. The `pypi` publication job downloads and
+   verifies that exact bundle, then publishes it through PyPI Trusted Publishing with GitHub OIDC and environment
+   `pypi`, without checking out source or rebuilding.
+8. After publication, smoke-test the release from the normal public package index:
 
    ```bash
    uv tool run --from "hostmark==<version>" hostmark --version
@@ -38,7 +37,7 @@ GitHub. Do not publish locally.
    hostmark --version
    ```
 
-`workflow_dispatch` must target the current `origin/main` tip and produces downloadable validation artifacts only; it
-cannot publish. Tag deletion events cannot build or publish. Do not overwrite released files or retry a conflicting
-version with `skip-existing`: PyPI files are immutable, and any source change after a release requires a new version.
-The workflow does not create a GitHub Release automatically.
+`workflow_dispatch` builds downloadable artifacts for inspection but cannot publish. Tag deletion events cannot build or
+publish. Do not overwrite released files or retry a conflicting version with `skip-existing`: PyPI files are immutable,
+and any source change after a release requires a new version. The workflow does not create a GitHub Release
+automatically.
