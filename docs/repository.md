@@ -74,7 +74,7 @@ not sync-ready until the three files are staged and committed and an `origin` up
 
 On a new machine:
 
-1. Install Hostmark 0.2.0 from FoxPI as described in the [README](../README.md).
+1. Install Hostmark 0.2.0 from PyPI as described in the [README](../README.md).
 2. Generate and record the machine's UUID. On Windows, use an elevated terminal and omit `--sudo`.
 
 ```bash
@@ -149,12 +149,25 @@ Hostmark never performs this migration automatically. A repository that stays on
 
 ## Inventory-repository CI
 
-CI for the separate private inventory repository is opt-in; `repo init` does not generate a workflow. Install Hostmark
-from FoxPI using that repository's protected environment or repository secrets, then run snapshot validation for every
+CI for the separate private inventory repository is opt-in; `repo init` does not generate a workflow. The inventory
+repository itself should remain private. Run the public, version-pinned Hostmark release directly from PyPI:
+
+```bash
+uvx --from "hostmark==<version>" hostmark registry validate --registry hosts.json
+```
+
+Alternatively, install it into the workflow's normal Python environment:
+
+```bash
+python -m pip install "hostmark==<version>"
+hostmark registry validate --registry hosts.json
+```
+
+No private package-index configuration or package-index credentials are required. Run snapshot validation for every
 candidate `hosts.json`. On pull requests, extract the exact base-branch `hosts.json` and pass it through `--against`; on
 direct main pushes, use the previous main commit in the same way. Snapshot validation alone cannot detect a deleted
 tombstone or rewritten history, so append-only ownership and lifecycle enforcement requires the baseline comparison.
 
-Keep FoxPI usernames/passwords in GitHub secrets and pass only the corresponding environment variables to the install
-step. The inventory workflow should never print credentials, mutate `hosts.json`, or generate a commit. Hostmark's source
-CI demonstrates the base-SHA selection policy, but each private inventory repository deliberately owns its exact workflow.
+The inventory workflow should never print inventory data or credentials, mutate `hosts.json`, or generate a commit.
+Hostmark's source CI demonstrates the base-SHA selection policy, but each private inventory repository deliberately owns
+its exact workflow.

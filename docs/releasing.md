@@ -1,34 +1,45 @@
 # Releasing
 
-Hostmark releases are built and published to FoxPI by GitHub Actions. Do not publish locally or to public PyPI.
+Public Hostmark releases are published to TestPyPI and PyPI by GitHub Actions using Trusted
+Publishing and GitHub OIDC. The publication jobs use the GitHub environments named `testpypi`
+and `pypi`; no username, password, or API-token secret is used. Do not publish locally.
 
-1. Update the single executable version source, `src/hostmark/version.py`, and add the release entry to `CHANGELOG.md`.
-   The artifact verifier reads that file with the standard library and derives expected names and metadata from it.
-2. Run `make check`, `make build`, and `git diff --check`. Derive `SOURCE_DATE_EPOCH` from the release commit and run
-   two clean `uv build --no-sources` builds. `make build` performs the Twine and artifact privacy/metadata checks;
-   `scripts/release/compare_artifacts.py` requires identical wheel bytes and identical extracted sdist paths, contents,
-   normalized modes, entry types, and symlink targets. Record raw sdist hashes but ignore only container metadata.
-3. Inspect wheel and sdist members, then install the wheel in a clean temporary environment. Verify import,
-   `hostmark --version`, `python -m hostmark --version`, root help, and `hostmark repo --help`. Neither artifact may
-   contain `hosts.json`, a live `HOSTMARK_REPOSITORY` data file, `.git` metadata, or an inventory worktree. Wheel metadata
-   must contain `GitPython>=3.1.59,<4` as a runtime requirement.
-4. If a separate source archive is needed, create it from tracked files, for example with `git archive`, rather than
-   archiving a working directory containing `.git`, `.venv`, caches, or `dist`.
-5. Merge the exact validated commit to `main` and wait for CI. The intended tag is `v<version>` and must equal `v` plus
-   `hostmark.version.__version__`.
-6. Later, under separate authorization, create and push the release tag. A tag publication requires its commit to be
-   reachable from `origin/main`. The tag is the sole publication authority. The workflow builds once, checks
-   privacy/metadata and tag/version equality, uploads one checksummed artifact bundle, and passes those exact files
-   without rebuilding to the protected `foxpi-publish` environment.
-7. After publication, manually smoke-test a clean install:
+## Release checklist
+
+1. Update the single executable version source, `src/hostmark/version.py`, and add the release
+   entry to `CHANGELOG.md`.
+2. Run `make check`, `make build`, and `git diff --check`. `make build` performs the Twine and
+   artifact privacy/metadata checks.
+3. Inspect wheel and sdist members, then install the wheel in a clean temporary environment.
+   Verify import, `hostmark --version`, `python -m hostmark --version`, root help, and
+   `hostmark repo --help`. Neither artifact may contain `hosts.json`, a live
+   `HOSTMARK_REPOSITORY` data file, `.git` metadata, or an inventory worktree.
+4. If a separate source archive is needed, create it from tracked files with `git archive`
+   rather than archiving a working directory containing `.git`, `.venv`, caches, or `dist`.
+5. Merge the release preparation changes to `main` and wait for normal CI and the TestPyPI
+   publication to pass.
+6. Check the TestPyPI package, then create and push the version tag:
 
    ```bash
-   uv tool run --from hostmark==<version> \
-     --index https://foxpi.foxenz.com/publisher/prod/+simple/ \
-     hostmark --version
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
    ```
 
-Configure `FOXPI_PUBLISH_USERNAME` and `FOXPI_PUBLISH_PASSWORD` as protected environment secrets. A manual
-`workflow_dispatch` must select the current `origin/main` tip, builds and validates downloadable artifacts only, and can
-never enter the publish job. Published versions are immutable; if source changes, increment the version. No workflow
-creates a public-PyPI upload or GitHub Release automatically.
+7. The `v*` tag push builds the package again and publishes it to PyPI through OIDC and the
+   `pypi` environment.
+8. After publication, smoke-test the release from the normal public package index:
+
+   ```bash
+   uv tool run --from "hostmark==<version>" hostmark --version
+   ```
+
+   In a separate clean Python environment, also run:
+
+   ```bash
+   python -m pip install "hostmark==<version>"
+   hostmark --version
+   ```
+
+Pushes to `main` and manual workflow runs build and publish to TestPyPI. Tag pushes build and
+publish separately to PyPI. Do not overwrite released files or retry a conflicting version with
+`skip-existing`; any source change after a release requires a new version.
