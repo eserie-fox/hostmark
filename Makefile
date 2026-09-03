@@ -21,9 +21,6 @@ test:
 
 registry-check:
 	uv run hostmark registry validate --registry registry/hosts.example.json
-	@if [ -f registry/hosts.json ]; then \
-		uv run hostmark registry validate --registry registry/hosts.json; \
-	fi
 
 build:
 	uv build

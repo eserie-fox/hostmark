@@ -5,7 +5,7 @@
 Hostmark requires Python 3.11 or newer and uses uv:
 
 ```bash
-uv sync --locked --python 3.11 --extra dev
+make sync
 make check
 ```
 
@@ -17,7 +17,7 @@ Make targets are:
 - `lint`: run Ruff lint rules;
 - `typecheck`: run mypy over `src` and `tests`;
 - `test`: run the deterministic pytest suite;
-- `registry-check`: canonically validate the example and an existing real registry once;
+- `registry-check`: canonically validate only the synthetic example registry;
 - `build`: build, run Twine checks, and inspect distribution privacy/metadata;
 - `check`: aggregate formatting, lint, typing, tests, and registry validation without building packages; and
 - `clean`: remove only project-generated caches and build outputs, never registry data.
@@ -34,8 +34,10 @@ configuration.
 
 Only synthetic UUIDs and reserved example domains belong in tests or `registry/hosts.example.json`. Do not copy real host
 inventory, production runtime configuration, remotes, or credentials into fixtures. Tests create marked inventory
-repositories only under pytest temporary directories. The source checkout must not contain root `HOSTMARK_REPOSITORY` or
-`hosts.json`; a real inventory belongs in its separate private repository.
+repositories only under pytest temporary directories. The public source checkout prohibits root
+`HOSTMARK_REPOSITORY`, root `hosts.json`, and `registry/hosts.json`; all three paths are ignored. A real inventory
+belongs in its separate private repository. The `registry-check` target validates only
+`registry/hosts.example.json`.
 
 The artifact verifier reads the expected version directly from `src/hostmark/version.py`, checks the GitPython runtime
 constraint, then opens both wheel and sdist and rejects the entire `registry/` tree, host inventory names, a live
@@ -47,10 +49,11 @@ and require temporary cleanup and preservation of an unreplaced original.
 
 ## CI scope
 
-Shared CI runs the same Ubuntu/Python 3.11 contract as the other public projects: Ruff formatting,
-Ruff lint, and pytest using the committed lockfile. The additional mypy, registry-history,
-cross-platform, package-install, and CLI smoke checks remain available as focused local checks;
-they are not duplicated as required CI jobs.
+Shared CI runs Ruff formatting and linting plus mypy on Ubuntu with Python 3.11. Pytest runs on
+Ubuntu with Python 3.11 and 3.13, Windows with Python 3.11, and macOS with Python 3.11. Individual
+matrix jobs remain visible for diagnostics, while the stable required gates are `ci / format-lint`
+and `ci / tests`. Hostmark ignores `uv.lock`; shared CI resolves dependencies when no committed
+lockfile is present.
 
 Repository path tests inject platform, environment, home, and working-directory inputs. System-Git/GitPython integration
 tests are limited to local init/clone/fast-forward and linked-worktree flows and skip only when Git is unavailable.

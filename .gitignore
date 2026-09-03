@@ -210,3 +210,8 @@ __marimo__/
 skills-lock.json
 .agents
 .codex
+
+# Public source/inventory boundary
+/HOSTMARK_REPOSITORY
+/hosts.json
+/registry/hosts.json

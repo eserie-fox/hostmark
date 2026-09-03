@@ -16,8 +16,8 @@ and `pypi`; no username, password, or API-token secret is used. Do not publish l
    `HOSTMARK_REPOSITORY` data file, `.git` metadata, or an inventory worktree.
 4. If a separate source archive is needed, create it from tracked files with `git archive`
    rather than archiving a working directory containing `.git`, `.venv`, caches, or `dist`.
-5. Merge the release preparation changes to `main` and wait for normal CI and the TestPyPI
-   publication to pass.
+5. Merge the release preparation changes to `main` and wait for normal CI. Explicitly dispatch
+   the `Publish Python package` workflow, then wait for its TestPyPI publication to pass.
 6. Check the TestPyPI package, then create and push the version tag:
 
    ```bash
@@ -40,6 +40,7 @@ and `pypi`; no username, password, or API-token secret is used. Do not publish l
    hostmark --version
    ```
 
-Pushes to `main` and manual workflow runs build and publish to TestPyPI. Tag pushes build and
-publish separately to PyPI. Do not overwrite released files or retry a conflicting version with
+Pull requests and ordinary `main` pushes run CI only. A manual workflow dispatch builds once and
+publishes to TestPyPI. A newly created `v*` tag builds once and publishes to PyPI; deleting a tag
+does not build or publish. Do not overwrite released files or retry a conflicting version with
 `skip-existing`; any source change after a release requires a new version.
