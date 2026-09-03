@@ -68,7 +68,7 @@ git push -u origin main
 `repo init` creates an unborn `main` branch, canonical `.gitattributes`, an empty marker, and a canonical empty registry.
 It does not stage, commit, configure a remote, or push, and it is not sync-ready until those three files are committed.
 
-On another machine, install Hostmark 0.2.0, create that machine's identity, and record its UUID before cloning. On
+On another machine, install Hostmark, create that machine's identity, and record its UUID before cloning. On
 Windows, run `identity init` without `--sudo` from an elevated terminal.
 
 ```bash

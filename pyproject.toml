@@ -47,6 +47,7 @@ classifiers = [
 Homepage = "https://github.com/eserie-fox/hostmark"
 Repository = "https://github.com/eserie-fox/hostmark"
 Issues = "https://github.com/eserie-fox/hostmark/issues"
+Changelog = "https://github.com/eserie-fox/hostmark/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [

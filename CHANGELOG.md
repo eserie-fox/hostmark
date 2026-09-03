@@ -2,10 +2,10 @@
 
 All notable changes to hostmark are documented here.
 
-## 0.2.0 - 2026-08-30
+## 0.2.0 - 2026-09-03
 
-- Prepare Hostmark's first public PyPI release.
-- Add PyPI Trusted Publishing through GitHub Actions OIDC with a checksummed, build-once artifact handoff.
+- Publish Hostmark's first public PyPI release.
+- Add PyPI Trusted Publishing through GitHub Actions OIDC with a build-once artifact handoff.
 - Remove private-index publication and installation configuration.
 - Document public installation through standard uv, pipx, and pip commands.
 - Add zero-byte `HOSTMARK_REPOSITORY` marker discovery with root-level `hosts.json` registries.
